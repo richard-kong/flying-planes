@@ -25,6 +25,11 @@ _Avoid_: controls, input, joystick
 A normalised value in [0, 1] expressing desired speed, produced from the mouse wheel or pinch.
 _Avoid_: speed, power, gas
 
+**Soft Floor**:
+The minimum height above the terrain below which the Plane cannot descend; reaching it eases
+the Plane upward. There is no crash.
+_Avoid_: collision, ground clamp, crash
+
 **Autopilot**:
 The idle behaviour that levels the Plane and applies gentle banking after a period with no input.
 _Avoid_: idle mode, demo mode, screensaver
@@ -45,6 +50,14 @@ out of range.
 _Avoid_: tile, patch, cell
 
 **Biome**:
-A named parameter set (terrain noise, palette, sky, fog, lighting) that gives a region of the
-world its look. The world is a sequence of Biomes with transitions between them.
-_Avoid_: landscape, level, theme, region
+A named parameter set (terrain noise, palette, sky, fog, lighting, buildings) that gives a Biome
+Region its look. Current Biomes: Mountain, City.
+_Avoid_: landscape, level, theme
+
+**Biome Region**:
+A contiguous stretch of the world assigned exactly one Biome. Regions alternate along the world.
+_Avoid_: zone, area, sector
+
+**Biome Transition**:
+The fixed-length zone between two adjacent Biome Regions where their parameters blend.
+_Avoid_: boundary, border, blend zone
