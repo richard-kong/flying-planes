@@ -50,8 +50,9 @@ out of range.
 _Avoid_: tile, patch, cell
 
 **Biome**:
-A named parameter set (terrain noise, palette, sky, fog, lighting, water level, buildings, city
-lights) that gives a Biome Region its look. Current Biomes: Mountain, City.
+A named parameter set (terrain noise, altitude thresholds, fog density, lake frequency) that
+gives a Biome Region its shape. Current Biomes: Alpine, Foothills. Sky, sun, fog colour, water
+level, and palette are shared by all Biomes in feature 001 (Pastel Dawn mood).
 _Avoid_: landscape, level, theme
 
 **Biome Region**:
