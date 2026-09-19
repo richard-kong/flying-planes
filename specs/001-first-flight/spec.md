@@ -25,7 +25,8 @@ single Pastel Dawn lighting mood (see Clarifications, "Visual mock-up review").
   parallel to the bands stays in one Biome.
 - Q: How does the sun behave, and does it cast shadows? → A: Sun fixed in the world at a low
   golden-hour elevation (about 10 degrees above the horizon), visible as a disc with a bright halo;
-  terrain is shaded by its angle to the sun, with no cast shadows.
+  terrain is shaded by its angle to the sun, with no cast shadows. *(Elevation superseded: the
+  visual mock-up review below fixed it at about 12 degrees, FR-022a.)*
 - Q: What light does the City give off, beyond the glowing windows already specified? → A:
   Window grids with a Seed-determined fraction of dark windows, plus static rows of warm street
   lights along both edges of every road, brighter and denser toward the band centre; no
@@ -34,7 +35,8 @@ single Pastel Dawn lighting mood (see Clarifications, "Visual mock-up review").
 - Q: Which natural scenery should Mountain valleys contain beyond the altitude colour palette and
   fog? → A: Still lakes wherever terrain dips below a fixed water level (flat, sky-tinted, soft
   shoreline, no waves), plus a dark-green forest colour band with a coarse speckle between the
-  vegetation and rock altitudes (colour only, no tree geometry).
+  vegetation and rock altitudes (colour only, no tree geometry). *(Lake tint superseded: the
+  visual mock-up review below chose warm gold over sky tint, FR-022c.)*
 - Q: What visual style should the terrain surface have, and how much detail should stay visible
   near versus far from the Plane? → A: Smooth-shaded terrain with fine detail (small ridges and
   gullies) near the Plane, fading to smooth silhouettes in the distance.
@@ -215,8 +217,8 @@ scene and fades out once the visitor starts steering or after a few seconds. The
 - Multi-touch: the first finger steers; a second finger switches to pinch (Throttle) and does
   not steer; releasing back to one finger resumes steering from that finger's new start point.
 - Wheel and pinch arriving in the same frame: the last event wins.
-- `?seed=` is missing, empty, or not a whole number: a random Seed is used and the world still
-  loads.
+- `?seed=` is missing, empty, negative, fractional, or above 4294967295: a random Seed is used
+  and the world still loads.
 - Plane flies to extreme distances from the start: terrain and lakes still generate correctly
   with no visible precision artefacts within a 1-hour continuous flight.
 - Plane descends over a lake: the minimum height is measured from the water surface, not the
@@ -273,8 +275,9 @@ scene and fades out once the visitor starts steering or after a few seconds. The
   duration of any flight (endless world).
 - **FR-017**: The world MUST be generated deterministically from a Seed: the same Seed MUST
   produce identical terrain heights, Biome layout, and lake placement at every coordinate.
-- **FR-018**: The Seed MUST be read from the `seed` URL query parameter when it is a whole
-  number; otherwise a random Seed MUST be chosen per page load.
+- **FR-018**: The Seed MUST be read from the `seed` URL query parameter when it is a
+  non-negative whole number no greater than 4294967295 (an unsigned 32-bit value); otherwise a
+  random Seed MUST be chosen per page load.
 - **FR-019**: The world MUST contain exactly two Biomes in this feature: Alpine and Foothills.
   Both are mountain landscapes sharing one palette, sky, sun, and fog colour (FR-022, FR-022a,
   FR-022e) and differing only in terrain shape, altitude range, and lake frequency.
