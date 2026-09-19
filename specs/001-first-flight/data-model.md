@@ -14,7 +14,7 @@ loop). Vectors/quaternions are `three/src/math` types. Units: metres, seconds, r
 | Field | Type | Rules |
 |-------|------|-------|
 | `steer.x` | `number` ∈ [-1, 1] | Right positive. Pointer: `(clientX - w/2) / (w/2)`; touch: drag offset / `TOUCH_FULL_DEFLECTION_PX` (FR-009, FR-010). |
-| `steer.y` | `number` ∈ [-1, 1] | Down positive on screen = nose down. |
+| `steer.y` | `number` ∈ [-1, 1] | Up on screen = -1 = nose down; down on screen = +1 = nose up (US1 scenario 3). |
 | `throttle` | `number` ∈ [0, 1] | Wheel: ±`THROTTLE_STEP` per notch; pinch: scale delta (FR-011). Initial 0.5 (cruise). |
 | `lastInputTime` | `number` | Sim time of last non-zero steer change or throttle change; feeds Autopilot (FR-026, FR-027). |
 | `active` | `boolean` | False when pointer leaves the window or touch ends → steer resets to (0, 0) (FR-012). |
@@ -38,6 +38,7 @@ other writer. `prev` copy kept for render interpolation.
 | Field | Type | Rules |
 |-------|------|-------|
 | `engaged` | `boolean` | `simTime - lastInputTime >= IDLE_TO_AUTOPILOT` (FR-026); any input → false immediately (FR-027). |
+| `engagedAt` | `number` | Sim time at which `engaged` last became true; banking starts only once `simTime - engagedAt >= LEVEL_OUT_TIME` (level out first, FR-026). |
 | `phase` | `number` | Advances at `AUTOPILOT_BANK_HZ`; produces steer `x = AUTOPILOT_BANK_AMPL * sin(phase)`, `y = 0`. |
 
 Autopilot writes a SteerVector, so FR-028 holds by construction (it goes through the same

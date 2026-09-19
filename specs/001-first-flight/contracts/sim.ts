@@ -77,7 +77,7 @@ export declare function stepFlight(
 ): void;
 
 // autopilot.ts
-export interface AutopilotState { engaged: boolean; phase: number }
+export interface AutopilotState { engaged: boolean; engagedAt: number; phase: number }
 export declare function stepAutopilot(
   ap: AutopilotState, input: FlightInput, simTime: number, dt: number, steerOut: FlightInput,
 ): void;

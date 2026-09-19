@@ -16,7 +16,9 @@ Decisions settled in the planning interview (2026-09-19). No NEEDS CLARIFICATION
 
 - **Decision**: Every chunk has the same footprint (`CHUNK_SIZE = 256 m`). Grid resolution is a
   pure function of the Chebyshev ring distance from the Plane's chunk: ring 0-2 → 64x64,
-  3-7 → 32x32, 8-16 → 16x16. Each chunk adds a downward skirt along its border to hide cracks
+  3-7 → 32x32, 8-16 → 16x16. The resident set is the disc of chunks whose centre lies within
+  `VIEW_RINGS` chunks (Euclidean) of the Plane's chunk, ≈800 chunks, not the 33x33 = 1089 square;
+  the fog-hidden corners are never generated. Each chunk adds a downward skirt along its border to hide cracks
   between rings. LOD changes happen only far from the Plane, under fog (FR-016a).
 - **Rationale**: Ring → resolution is trivially testable; skirts are ~10 lines.
 - **Alternatives**: quadtree (largest single code item, not needed for "no visible popping");
@@ -122,19 +124,27 @@ Decisions settled in the planning interview (2026-09-19). No NEEDS CLARIFICATION
 | `BAND_WIDTH` | 3600 m (60 s cruise) | FR-020 |
 | `TRANSITION_WIDTH` | 600 m (10 s cruise) | FR-021 |
 | `CHUNK_SIZE` | 256 m | Q1 |
-| `VIEW_RINGS` | 16 (≈4 km) | Q1 |
+| `VIEW_RINGS` | 16 (≈4 km, Euclidean disc ≈ 804 chunks) | Q1 |
 | `LOD_RINGS` | [2, 7, 16] → [64, 32, 16] | R2 |
 | `CHUNKS_PER_FRAME` | 2 | Q2 |
+| `POOL_PER_LOD` | [32, 240, 680] geometries | Q2, R2 disc counts + transition headroom |
+| `SKIRT_DEPTH` | 30 m | R2 |
+| `SPECKLE_SIZE` | 24 m forest speckle cell | FR-022d |
 | `ALPINE_MAX_HEIGHT` / `FOOTHILLS_MAX_HEIGHT` | 1200 / 400 m | Q1 |
 | `WATER_LEVEL` | 120 m | Q1 |
 | `MIN_ALTITUDE_ABOVE_TERRAIN` | 40 m | FR-006 |
 | `MAX_ROLL` / `MAX_PITCH` | 45° / 30° | FR-004 |
 | `LEVEL_OUT_TIME` | 2 s | FR-005 |
+| `TURN_RATE_PER_ROLL` | 0.9 /s (heading rate = roll in rad × this) | FR-003 |
+| `MAX_ACCEL` | 20 m/s² | FR-007 |
+| `TOUCH_FULL_DEFLECTION_PX` | 160 px drag = full deflection | FR-010 |
+| `THROTTLE_STEP` | 0.1 per wheel notch (100 px deltaY) | FR-011 |
 | `IDLE_TO_AUTOPILOT` | 5 s | FR-026 |
 | `AUTOPILOT_BANK` | 12° at 0.1 Hz | FR-026 |
 | `CAMERA_OFFSET` | (0, 18, -55) m plane-local | FR-014 |
 | `CAMERA_SPRING` / `CAMERA_ROLL_FOLLOW` | 4 /s, 0.3 | Q4 |
-| `SUN_ELEVATION` / `SUN_AZIMUTH` | 12° / fixed | FR-022a |
+| `CAMERA_MIN_CLEARANCE` / `CAMERA_LOOK_AHEAD` | 15 m / 60 m ahead of the Plane | FR-015, FR-014 |
+| `SUN_ELEVATION` / `SUN_AZIMUTH` | 12° / 60° from +x toward +z (oblique to the band axis so neither heading is flat-lit) | FR-022a |
 | `SIM_DT` | 1/120 s | R12 |
 | `MAX_DPR` | 1.5 | R9 |
 | Palette hexes | per FR-022a/c/e/g | spec |

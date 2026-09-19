@@ -29,7 +29,7 @@ graph (materials, geometry pool, sky, plane) without a `WebGLRenderer` and asser
 **Performance Goals**: 60 fps laptop iGPU, 30 fps mid-range phone; first frame <= 2 s on 4G
 **Constraints**: <= 600 KB gzipped JS incl. Three.js; zero steady-state heap allocations in the
 frame loop; no binary assets; terrain streamed and culled
-**Scale/Scope**: one scene, two Biomes, ~800 resident chunks across 3 LOD rings, ~15 source files
+**Scale/Scope**: one scene, two Biomes, ~800 resident chunks (Euclidean disc of radius `VIEW_RINGS`, see research R2) across 3 LOD rings, ~15 source files
 
 ## Constitution Check
 
