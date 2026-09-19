@@ -11,6 +11,10 @@ landscapes, flown with mouse movements and gestures. First feature: fly the Plan
 terrain that alternates between mountain and city Biomes, with a Chase Camera and Autopilot on
 idle."
 
+**Revision 2026-09-19**: after a visual mock-up review the City Biome was removed from this
+feature; the world now alternates between two Mountain Biomes (Alpine and Foothills) under a
+single Pastel Dawn lighting mood (see Clarifications, "Visual mock-up review").
+
 ## Clarifications
 
 ### Session 2026-09-19
@@ -21,11 +25,12 @@ idle."
   parallel to the bands stays in one Biome.
 - Q: How does the sun behave, and does it cast shadows? → A: Sun fixed in the world at a low
   golden-hour elevation (about 10 degrees above the horizon), visible as a disc with a bright halo;
-  terrain and buildings are shaded by their angle to the sun, with no cast shadows.
+  terrain is shaded by its angle to the sun, with no cast shadows.
 - Q: What light does the City give off, beyond the glowing windows already specified? → A:
   Window grids with a Seed-determined fraction of dark windows, plus static rows of warm street
   lights along both edges of every road, brighter and denser toward the band centre; no
-  animation and no bloom.
+  animation and no bloom. *(Superseded: the City Biome was removed in the visual mock-up
+  review below.)*
 - Q: Which natural scenery should Mountain valleys contain beyond the altitude colour palette and
   fog? → A: Still lakes wherever terrain dips below a fixed water level (flat, sky-tinted, soft
   shoreline, no waves), plus a dark-green forest colour band with a coarse speckle between the
@@ -33,6 +38,25 @@ idle."
 - Q: What visual style should the terrain surface have, and how much detail should stay visible
   near versus far from the Plane? → A: Smooth-shaded terrain with fine detail (small ridges and
   gullies) near the Plane, fading to smooth silhouettes in the distance.
+
+### Visual mock-up review 2026-09-19
+
+Four rendered mood variants (A Alpenglow, B Amber Haze, C Twilight Blue, D Pastel Dawn) were
+reviewed side by side in mountain, transition, and city views (artifact:
+`specs/001-first-flight/mockups/scenery-moods.html`, renders live with WebGL). Decisions:
+
+- Q: Which overall mood? → A: **D Pastel Dawn**: high-key and soft. Pale gold sun about 12
+  degrees above the horizon, milky sky (peach horizon through soft pink to a pale blue zenith),
+  lavender fog, gentle contrast.
+- Q: Which mountain palette? → A: Borrowed from **C Twilight Blue**: cool dusky palette of
+  pink-tinted snow, violet-grey rock, deep blue-green forest, muted sage valleys, so the terrain
+  reads cool against the warm pastel sky.
+- Q: Which lake treatment? → A: Borrowed from **B Amber Haze**: lakes are strongly sun-tinted,
+  reading as flat pools of warm gold light in the valley floors rather than as sky-blue water.
+- Q: What about the City? → A: **Removed** from this feature (the rendered buildings did not
+  meet the visual bar). Biome Regions and Biome Transitions stay, and now alternate between two
+  Mountain Biomes: **Alpine** (tall snow-capped peaks, sparse lakes) and **Foothills** (lower
+  rounded green hills, broad valleys, frequent lakes). City is deferred to a later feature.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -70,21 +94,22 @@ Plane in all four directions and toward the ground. Delivers a controllable Plan
 
 ---
 
-### User Story 2 - Fly over endless mountains and cities (Priority: P1)
+### User Story 2 - Fly over endless alpine peaks and green foothills (Priority: P1)
 
 As the Plane flies, terrain keeps appearing ahead and disappearing behind, in every direction,
-forever. The world is striped into parallel bands that alternate between two Biomes: snow-capped
-mountains at golden hour with fog in the valleys, and a city of lit buildings on a grid of dark
-roads. Between the two the landscape blends over a stretch of flight rather than switching
-abruptly. Each visit shows a different world, but the same `?seed=` in the address bar always
-shows the same world.
+forever. The world is striped into parallel bands that alternate between two Biomes: Alpine,
+tall snow-capped peaks with violet-grey rock and fog-filled valleys, and Foothills, lower rounded
+green hills with broad valleys dotted with still, gold-lit lakes. Both sit under the same soft
+pastel dawn sky. Between the two the landscape blends over a stretch of flight rather than
+switching abruptly. Each visit shows a different world, but the same `?seed=` in the address bar
+always shows the same world.
 
 **Why this priority**: Equal to Story 1; the landscape is the reason to fly. Two Biomes prove
 the Biome mechanic from day one.
 
 **Independent Test**: Fly straight for several minutes; observe terrain never runs out, the
-Biome alternates mountain -> city -> mountain, and the transition is gradual. Reload with the same
-`?seed=` and observe identical terrain at the start position.
+Biome alternates Alpine -> Foothills -> Alpine, and the transition is gradual. Reload with the
+same `?seed=` and observe identical terrain at the start position.
 
 **Acceptance Scenarios**:
 
@@ -92,28 +117,27 @@ Biome alternates mountain -> city -> mountain, and the transition is gradual. Re
    terrain is always present beneath and ahead of the Plane with no visible gaps or edges;
    ground near the Plane shows small ridges and gullies while distant ridgelines are smooth,
    with no visible pop as terrain approaches.
-2. **Given** the Plane is over a mountain region, **When** it flies across the band axis,
-   **Then** it enters a city region, and later another mountain region, with each region long
+2. **Given** the Plane is over an Alpine region, **When** it flies across the band axis,
+   **Then** it enters a Foothills region, and later another Alpine region, with each region long
    enough to be experienced as a place rather than a flicker; **When** it flies parallel to the
    bands, **Then** it stays in the same Biome indefinitely.
-3. **Given** the Plane crosses from mountain to city, **When** the visitor watches the boundary,
-   **Then** the ground palette, building density, and fog blend over a fixed stretch of flight
-   rather than changing in a single frame.
-4. **Given** a mountain region, **Then** terrain colour varies by altitude (snow on peaks, rock
-   on slopes, a speckled dark-green forest band below the rock, lighter vegetation in valleys),
-   valley floors that dip below the water level hold flat still lakes tinted by the sky, the sun
-   sits low with a warm sky gradient, and valleys hold fog.
+3. **Given** the Plane crosses from Alpine to Foothills, **When** the visitor watches the
+   boundary, **Then** peak height, ground palette, fog, and lake frequency blend over a fixed
+   stretch of flight rather than changing in a single frame.
+4. **Given** an Alpine region, **Then** terrain colour varies by altitude (pink-tinted snow on
+   peaks, violet-grey rock on slopes, a speckled deep blue-green forest band below the rock,
+   muted sage vegetation in valleys), the few valley floors that dip below the water level hold
+   flat still lakes glowing with the sun's warm gold, and valleys hold lavender fog.
    **When** the Plane turns toward the sun, **Then** slopes facing the Plane darken and the sun
    disc and halo come into view; **When** it turns away, **Then** facing slopes brighten; no
    cast shadows appear in either case.
-5. **Given** a city region, **Then** the ground is mostly flat, buildings are box-shaped with
-   varied heights on a regular grid separated by dark road gaps, building faces show grids of
-   warm lit windows with some dark, and rows of street lights line both edges of every road.
-   **When** the Plane flies from the edge of the city band toward its centre, **Then** the
-   street lights become brighter and denser; none of the lights flicker, move, or animate.
-6. **Given** two page loads with the same `?seed=` value, **Then** the terrain and buildings at
-   the starting position are identical; **Given** two loads with no `?seed=`, **Then** the
-   worlds differ.
+5. **Given** a Foothills region, **Then** the terrain is lower and rounded with broad valleys,
+   snow is absent or confined to the very highest tops, the forest and vegetation bands dominate
+   the palette, and lakes are frequent and large; the sky, sun, and fog colour are the same as in
+   Alpine regions.
+6. **Given** two page loads with the same `?seed=` value, **Then** the terrain and lakes at the
+   starting position are identical; **Given** two loads with no `?seed=`, **Then** the worlds
+   differ.
 
 ---
 
@@ -193,8 +217,8 @@ scene and fades out once the visitor starts steering or after a few seconds. The
 - Wheel and pinch arriving in the same frame: the last event wins.
 - `?seed=` is missing, empty, or not a whole number: a random Seed is used and the world still
   loads.
-- Plane flies to extreme distances from the start: terrain and buildings still generate
-  correctly with no visible precision artefacts within a 1-hour continuous flight.
+- Plane flies to extreme distances from the start: terrain and lakes still generate correctly
+  with no visible precision artefacts within a 1-hour continuous flight.
 - Plane descends over a lake: the minimum height is measured from the water surface, not the
   submerged terrain, so the Plane never enters the water.
 - Plane flies directly toward the sun: the sun disc and halo are visible above the horizon and
@@ -248,45 +272,58 @@ scene and fades out once the visitor starts steering or after a few seconds. The
 - **FR-016**: Terrain MUST extend without visible edges in every horizontal direction for the
   duration of any flight (endless world).
 - **FR-017**: The world MUST be generated deterministically from a Seed: the same Seed MUST
-  produce identical terrain heights, Biome layout, and building placement at every coordinate.
+  produce identical terrain heights, Biome layout, and lake placement at every coordinate.
 - **FR-018**: The Seed MUST be read from the `seed` URL query parameter when it is a whole
   number; otherwise a random Seed MUST be chosen per page load.
-- **FR-019**: The world MUST contain exactly two Biomes in this feature: Mountain and City.
+- **FR-019**: The world MUST contain exactly two Biomes in this feature: Alpine and Foothills.
+  Both are mountain landscapes sharing one palette, sky, sun, and fog colour (FR-022, FR-022a,
+  FR-022e) and differing only in terrain shape, altitude range, and lake frequency.
 - **FR-020**: Biome Regions MUST be parallel bands spanning the world along one fixed world axis,
-  alternating Mountain, City, Mountain, ... across that axis. Each band MUST be wide enough to be
-  crossed in about 60 seconds at cruise speed; band order and offset derive from the Seed.
+  alternating Alpine, Foothills, Alpine, ... across that axis. Each band MUST be wide enough to
+  be crossed in about 60 seconds at cruise speed; band order and offset derive from the Seed.
 - **FR-021**: Between adjacent bands a Biome Transition MUST blend terrain height profile,
-  ground palette, fog, and building density over a fixed distance crossed in about 10 seconds at
-  cruise speed; no per-frame jump in any of these MUST be visible.
+  altitude thresholds of the palette, fog density, and lake frequency over a fixed distance
+  crossed in about 10 seconds at cruise speed; no per-frame jump in any of these MUST be visible.
 - **FR-016a**: Terrain MUST be smooth-shaded (no visible facets). Near the Plane the surface
   MUST show fine detail (small ridges and gullies layered on the large forms); with distance this
   fine detail MUST fade out so far terrain reads as smooth silhouettes. Detail changes MUST not
   be visible as popping or seams from the Chase Camera.
-- **FR-022**: Mountain Biome: tall varied peaks; ground colour by altitude (snow above a
-  threshold, rock on steep slopes, a dark-green forest band below the rock altitude, lighter
-  vegetation on valley floors); fog concentrated in valleys; a warm-to-cool sky gradient.
-- **FR-022c**: In the Mountain Biome, terrain below a fixed world water level MUST be covered by
-  a flat, still lake surface tinted by the sky and sun, with a soft colour blend at the shoreline.
-  Lakes MUST have no waves, ripples, or movement, and MUST not appear in the City Biome (the
-  city ground sits above the water level); lakes fade out through the Biome Transition.
+- **FR-022**: Alpine Biome: tall varied peaks with steep slopes; ground colour by altitude (snow
+  above a threshold, rock on steep slopes, a forest band below the rock altitude, vegetation on
+  valley floors); fog concentrated in valleys; only the deepest valleys dip below the water level.
+- **FR-022f**: Foothills Biome: lower, rounded hills with broad valleys; the same altitude
+  palette as FR-022 but with the snow threshold at or above the highest hilltops so snow is rare
+  or absent, the forest and vegetation bands covering most of the surface, and a larger share of
+  the terrain below the water level so lakes are frequent and large.
+- **FR-022e**: Shared palette (reference colours; the implementation MAY vary them slightly for
+  shading but MUST keep the same hue relationships): snow pale pink-white (#f0d8e8), rock cool
+  violet-grey (#4e4460), forest deep blue-green (#1f2e3a), valley vegetation muted sage
+  (#4e6a55), shoreline soft grey-mauve (#6a6070). The terrain MUST read cool against the warm
+  sky so peaks silhouette against the horizon.
+- **FR-022c**: In both Biomes, terrain below a fixed world water level MUST be covered by a flat,
+  still lake surface with a soft colour blend at the shoreline. Lake colour MUST be dominated by
+  the sun's warm gold (reference #ffd9c8 to #ffc98a) rather than the sky's blue, so lakes read as
+  pools of light; the lake surface MUST show a soft specular highlight when the Camera faces the
+  sun. Lakes MUST have no waves, ripples, or movement.
 - **FR-022d**: The forest band MUST carry a coarse, Seed-deterministic speckle in colour only;
   no tree geometry MUST be generated.
-- **FR-022a**: A single sun MUST be fixed in world space at a low golden-hour elevation (about 10
-  degrees above the horizon) in a fixed compass direction shared by both Biomes, and MUST be
-  visible in the sky as a disc with a bright halo when the Camera faces it.
-- **FR-022b**: Terrain and buildings MUST be shaded by their orientation to the sun (sun-facing
-  surfaces warm and bright, surfaces facing away cool and dark) so that turning the Plane changes
-  the lighting of the scene. No cast shadows MUST be rendered.
-- **FR-023**: City Biome: near-flat ground; box buildings on a regular grid with varied heights
-  and dark road gaps between blocks; same sky and sun as FR-022a.
-- **FR-023a**: Every building face MUST show a regular grid of warm lit windows in which a
-  Seed-determined fraction of windows is dark, so that facades differ from one another.
-- **FR-023b**: Every road MUST carry a row of warm street lights along each edge. Street light
-  brightness and spacing MUST vary with distance from the band centre: brightest and densest at
-  the centre, dimmest and sparsest at the band edges, fading out through the Biome Transition.
-- **FR-023c**: City lights MUST be static: no flicker, movement, animation, or glow post-effect.
-- **FR-024**: Terrain and buildings MUST be produced on demand around the Plane and released
-  when far behind, in Terrain Chunks.
+- **FR-022a**: A single sun MUST be fixed in world space at a low elevation of about 12 degrees
+  above the horizon in a fixed compass direction shared by both Biomes, and MUST be visible in
+  the sky as a small pale-gold disc (reference #fff0b0) with a soft warm halo (reference #ffd27a)
+  when the Camera faces it.
+- **FR-022b**: Terrain MUST be shaded by its orientation to the sun (sun-facing surfaces warm and
+  bright, surfaces facing away cool and dark) so that turning the Plane changes the lighting of
+  the scene. No cast shadows MUST be rendered.
+- **FR-022g**: Pastel Dawn mood. The sky MUST be a high-key three-stop gradient: peach at the
+  horizon (reference #ffe3c8), soft pink in the lower sky (reference #f2b8c6), pale blue at the
+  zenith (reference #8fb3e6). Distance fog and valley fog MUST be lavender (reference #cbbde6 to
+  #d8cdef) and MUST soften rather than blacken distant terrain; overall contrast MUST stay soft
+  (no crushed blacks, no saturated red or orange bands in the sky).
+- **FR-023**: The City Biome (near-flat ground, box buildings, roads, windows, street lights) is
+  REMOVED from this feature and MUST NOT be generated. Its requirements (formerly FR-023a-c) are
+  deferred to a later feature.
+- **FR-024**: Terrain and lakes MUST be produced on demand around the Plane and released when far
+  behind, in Terrain Chunks.
 - **FR-025**: No image, model, or audio files MUST be shipped; all visuals are generated.
 
 **Autopilot**
@@ -314,9 +351,9 @@ scene and fades out once the visitor starts steering or after a few seconds. The
 - **Chase Camera**: Pose derived from Plane state with smoothing.
 - **Seed**: Whole number determining the entire world.
 - **Terrain Chunk**: Fixed-size ground tile generated from Seed and its grid coordinate,
-  carrying heights, palette, and (in City regions) building footprints and heights.
-- **Biome**: Named parameter set (Mountain, City) for terrain shape, palette, fog, sky, water
-  level, buildings, and lights.
+  carrying heights and palette.
+- **Biome**: Named parameter set (Alpine, Foothills) for terrain shape, altitude thresholds, fog
+  density, and lake frequency; sky, sun, fog colour, water level, and palette are shared.
 - **Biome Region**: A band of the world, spanning it along one axis, assigned one Biome.
 - **Biome Transition**: The fixed-width zone between two bands where parameters blend as a
   function of position across the band axis.
@@ -338,8 +375,8 @@ scene and fades out once the visitor starts steering or after a few seconds. The
   seams between Terrain Chunks, visible detail-level popping, or visual jitter.
 - **SC-006**: Two loads with the same `?seed=` produce pixel-identical terrain silhouettes at the
   start position; two loads without it produce visibly different worlds.
-- **SC-007**: The Plane never intersects terrain or buildings in any test flight, including
-  full nose-down input held for 30 seconds.
+- **SC-007**: The Plane never intersects terrain or lakes in any test flight, including full
+  nose-down input held for 30 seconds.
 - **SC-008**: Left untouched for 10 seconds, the Plane is level and gently banking; the first
   pointer movement afterwards is reflected in the Plane's attitude on the very next frame.
 - **SC-009**: Every core mechanic (Flight Model, input mapping, Chase Camera, terrain
@@ -354,10 +391,12 @@ scene and fades out once the visitor starts steering or after a few seconds. The
   and a 3-year-old mid-tier Android or iPhone.
 - The Plane's visual model is a simple stylised shape generated in code; its exact look is a
   planning/implementation choice within the no-assets rule.
-- Golden hour is a fixed lighting state; there is no day/night cycle in this feature.
-- The Biome sequence alternates strictly Mountain/City; additional Biomes, weather, clouds,
-  moving water, tree geometry, traffic, animated or flickering lights, glow post-effects, sound, and any HUD or
-  settings are explicitly out of scope and belong to later features.
+- Pastel dawn is a fixed lighting state; there is no day/night cycle in this feature.
+- The Biome sequence alternates strictly Alpine/Foothills; a City Biome, additional Biomes,
+  weather, clouds, moving water, tree geometry, glow post-effects, sound, and any HUD or settings
+  are explicitly out of scope and belong to later features.
+- Reference colours in FR-022a/c/e/g describe the reviewed mock-up; they guide, not bind, the
+  implementation as long as the described mood and hue relationships hold.
 - Deployment target is any static file host; deployment itself is out of scope for this spec.
 - Constitution v1.0.0 governs: minimum code, performance budgets, strict TDD for core mechanics,
   procedural-only assets, single input abstraction.

@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First Flight - scenery mock-ups</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  :where(img, svg, canvas) { max-width: 100%; height: auto; }
+  html, body { background: var(--color-base-100); color: var(--color-base-content); }
+  .shot { aspect-ratio: 16 / 9; width: 100%; background: var(--color-base-200); border-radius: 0.5rem; overflow: hidden; position: relative; }
+  .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .shot .tag { position: absolute; left: .5rem; bottom: .5rem; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; background: rgba(0,0,0,.55); color: #fff; padding: .15rem .5rem; border-radius: .25rem; }
+  .swatch { width: 100%; height: 14px; border-radius: 3px; }
+  .hero-shot { aspect-ratio: 21 / 9; }
+  .variant-card.selected { outline: 2px solid var(--color-primary); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="max-w-6xl mx-auto px-6 pt-10 pb-6">
+  <p class="text-xs tracking-[.2em] uppercase opacity-60">Spec 001 - First Flight</p>
+  <h1 class="text-4xl font-semibold mt-2">Which world do you want to fly through?</h1>
+  <p class="mt-3 max-w-3xl opacity-80">
+    Four procedural moods rendered live in your browser from the <em>same</em> Seed, terrain and city layout, so only the
+    look changes: sun height and colour, sky gradient, fog, terrain palette, lake tint, window and street-light colour.
+    Everything already fixed by the spec is honoured: parallel Biome bands, world-fixed low sun with no cast shadows,
+    still lakes and a speckled forest band, window grids with dark windows, street-light rows that thicken toward the
+    city core, smooth terrain.
+  </p>
+  <div id="status" class="mt-4 flex items-center gap-3 text-sm opacity-80">
+    <span class="loading loading-spinner loading-sm"></span><span id="status-text">Generating terrain and rendering 12 views...</span>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 pb-16 space-y-10">
+  <section id="variants" class="grid gap-8"></section>
+
+  <section class="card card-border bg-base-200">
+    <div class="card-body">
+      <h2 class="card-title">Side by side</h2>
+      <p class="text-sm opacity-70">Same camera, same terrain; only the mood changes.</p>
+      <div class="tabs tabs-box mt-2" id="compare-tabs"></div>
+      <div id="compare" class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3"></div>
+    </div>
+  </section>
+
+  <section class="card card-border bg-base-200" id="decision">
+    <div class="card-body">
+      <h2 class="card-title">Your pick</h2>
+      <p class="text-sm opacity-70">Choose a base mood, optionally borrow individual elements from others, then queue the answer. Nothing is sent until you press <strong>Send to Agent</strong> in the Lavish bar.</p>
+      <form id="pick-form" data-lavish-question="scenery-mood" class="mt-4 grid gap-5">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Base mood</legend>
+          <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-2" id="pick-radios"></div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Borrow elements from another mood (optional)</legend>
+          <div class="grid sm:grid-cols-2 gap-2" id="pick-borrow"></div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Anything to change (optional)</legend>
+          <textarea name="notes" class="textarea w-full" rows="3" placeholder="e.g. more fog in valleys, sun higher, windows less orange, fewer street lights..."></textarea>
+        </fieldset>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="btn btn-primary">Queue this answer</button>
+          <span id="queued" class="text-sm opacity-70"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
+
+// ---------- deterministic noise ----------
+function hash2(x, y, seed) {
+  let h = (x * 374761393 + y * 668265263 + seed * 982451653) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967296;
+}
+function smooth(t) { return t * t * (3 - 2 * t); }
+function valueNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed);
+  const c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  const u = smooth(xf), v = smooth(yf);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, seed, octaves, lacunarity = 2.05, gain = 0.5) {
+  let amp = 1, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += amp * valueNoise(x * freq, y * freq, seed + i * 17);
+    norm += amp;
+    amp *= gain; freq *= lacunarity;
+  }
+  return sum / norm;
+}
+function ridged(x, y, seed, octaves) {
+  let amp = 1, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    const n = 1 - Math.abs(valueNoise(x * freq, y * freq, seed + i * 31) * 2 - 1);
+    sum += amp * n * n;
+    norm += amp;
+    amp *= 0.5; freq *= 2.1;
+  }
+  return sum / norm;
+}
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const smoothstep = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ---------- world layout ----------
+// Biome bands run along Z; the band axis is X. Mountain for x < 0, City for x > 0,
+// transition zone of width TRANS around x = 0.
+const SEED = 1701;
+const SIZE = 3200;
+const SEGS = 420;
+const TRANS = 260;
+const MOUNTAIN_H = 380;
+const WATER_Y = 62;
+const CITY_GROUND = 72;
+const CELL = 26;        // city cell pitch
+const ROAD = 8;         // road gap width
+const FEATURE = 0.0016; // base terrain frequency
+
+function cityWeight(x) { return smoothstep(-TRANS / 2, TRANS / 2, x); }
+
+function mountainHeight(x, z) {
+  const warp = fbm(x * FEATURE * 0.7 + 3.1, z * FEATURE * 0.7 - 1.7, SEED + 5, 3) * 2 - 1;
+  const base = ridged(x * FEATURE + warp * 0.25, z * FEATURE, SEED, 5);
+  const macro = fbm(x * FEATURE * 0.35, z * FEATURE * 0.35, SEED + 90, 3);
+  const detail = fbm(x * FEATURE * 9, z * FEATURE * 9, SEED + 200, 3) * 2 - 1;
+  let h = Math.pow(base, 1.6) * MOUNTAIN_H * (0.55 + macro * 0.9);
+  h += detail * 6;
+  return h;
+}
+function cityHeight(x, z) {
+  return CITY_GROUND + (fbm(x * 0.004, z * 0.004, SEED + 300, 2) - 0.5) * 3;
+}
+function terrainHeight(x, z) {
+  const w = cityWeight(x);
+  const m = mountainHeight(x, z);
+  if (w <= 0) return m;
+  if (w >= 1) return cityHeight(x, z);
+  return lerp(m, cityHeight(x, z), w);
+}
+
+// ---------- palettes ----------
+const C = (hex) => new THREE.Color(hex);
+const VARIANTS = {
+  A: {
+    name: "Alpenglow",
+    tagline: "Classic golden hour. Peach horizon into deep blue, pink-kissed snow, cool violet valley fog, amber windows.",
+    sunElev: 9, sunAz: -35,
+    sun: C("#ffb15c"), sunHalo: C("#ff8a3d"), sunIntensity: 2.4,
+    skyHorizon: C("#ffc59a"), skyMid: C("#d68878"), skyZenith: C("#2b3f78"),
+    fog: C("#8b7fb0"), fogDensity: 0.00105, valleyFog: C("#9d8fc4"),
+    ambientSky: C("#8fa0d8"), ambientGround: C("#5b3c2e"), ambient: 0.85,
+    snow: C("#fff1ea"), rock: C("#6f5f5c"), forest: C("#2c4a35"), meadow: C("#7fa85a"), shore: C("#a5946a"),
+    water: C("#ffb387"), waterMix: 0.55,
+    road: C("#1d1a1f"), block: C("#3a3238"), facade: C("#3f3541"), facadeLit: C("#8a5a44"),
+    window: C("#ffc971"), windowGlow: 1.4, street: C("#ffb060"), streetSize: 3.2,
+    litFraction: 0.7,
+  },
+  B: {
+    name: "Amber Haze",
+    tagline: "Heavy warm haze. Everything drenched in gold and rust, low dusty sun, soft silhouettes, white-gold windows.",
+    sunElev: 6, sunAz: -20,
+    sun: C("#ffd27a"), sunHalo: C("#ff9a3c"), sunIntensity: 2.6,
+    skyHorizon: C("#f2c08a"), skyMid: C("#cf8f62"), skyZenith: C("#6a4a55"),
+    fog: C("#d9a06a"), fogDensity: 0.0016, valleyFog: C("#e0ad7a"),
+    ambientSky: C("#e0a878"), ambientGround: C("#4a2e20"), ambient: 0.95,
+    snow: C("#ffe9c4"), rock: C("#7a5a45"), forest: C("#4a4a2a"), meadow: C("#a68a4a"), shore: C("#b08a55"),
+    water: C("#ffc98a"), waterMix: 0.7,
+    road: C("#201812"), block: C("#3d2e24"), facade: C("#4a3a2c"), facadeLit: C("#9a6a3a"),
+    window: C("#fff0c0"), windowGlow: 1.2, street: C("#ffd090"), streetSize: 3.0,
+    litFraction: 0.6,
+  },
+  C: {
+    name: "Twilight Blue",
+    tagline: "Sun on the horizon line. Magenta-orange strip under a deep indigo sky; dusky violet terrain; city lights dominate.",
+    sunElev: 3.5, sunAz: -50,
+    sun: C("#ff9a5c"), sunHalo: C("#ff5a7a"), sunIntensity: 1.9,
+    skyHorizon: C("#ffa882"), skyMid: C("#8e4f7c"), skyZenith: C("#141a4a"),
+    fog: C("#4a4a86"), fogDensity: 0.00115, valleyFog: C("#5c5aa0"),
+    ambientSky: C("#5a68b8"), ambientGround: C("#2a1e38"), ambient: 0.9,
+    snow: C("#f0d8e8"), rock: C("#4e4460"), forest: C("#1f2e3a"), meadow: C("#4e6a55"), shore: C("#6a6070"),
+    water: C("#ff8f9a"), waterMix: 0.5,
+    road: C("#0e0d18"), block: C("#221f30"), facade: C("#262238"), facadeLit: C("#5a3e5a"),
+    window: C("#ffd48a"), windowGlow: 2.2, street: C("#8fe0ff"), streetSize: 3.6,
+    litFraction: 0.82,
+  },
+  D: {
+    name: "Pastel Dawn",
+    tagline: "High-key and soft. Mint valleys, lavender fog, pale gold sun, milky sky; buildings light with lemon windows.",
+    sunElev: 12, sunAz: -30,
+    sun: C("#fff0b0"), sunHalo: C("#ffd27a"), sunIntensity: 2.0,
+    skyHorizon: C("#ffe3c8"), skyMid: C("#f2b8c6"), skyZenith: C("#8fb3e6"),
+    fog: C("#cbbde6"), fogDensity: 0.0012, valleyFog: C("#d8cdef"),
+    ambientSky: C("#c2cff0"), ambientGround: C("#8a7a70"), ambient: 1.05,
+    snow: C("#ffffff"), rock: C("#a89a94"), forest: C("#5f8a6a"), meadow: C("#a8d88f"), shore: C("#d8c8a0"),
+    water: C("#ffd9c8"), waterMix: 0.6,
+    road: C("#4a4650"), block: C("#8c8590"), facade: C("#a59ea8"), facadeLit: C("#d8b8a0"),
+    window: C("#fff4a8"), windowGlow: 1.0, street: C("#ffe8b0"), streetSize: 2.6,
+    litFraction: 0.5,
+  },
+};
+
+// ---------- sky ----------
+function makeSky(v, sunDir) {
+  const geo = new THREE.SphereGeometry(4000, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: {
+      horizon: { value: v.skyHorizon }, mid: { value: v.skyMid }, zenith: { value: v.skyZenith },
+      sunColor: { value: v.sun }, halo: { value: v.sunHalo }, sunDir: { value: sunDir },
+    },
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 horizon, mid, zenith, sunColor, halo, sunDir; varying vec3 vDir;
+      void main(){
+        float y = clamp(vDir.y, -0.05, 1.0);
+        vec3 col = mix(horizon, mid, smoothstep(0.0, 0.07, y));
+        col = mix(col, zenith, smoothstep(0.03, 0.34, y));
+        float d = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
+        col += halo * pow(d, 70.0) * 0.35;
+        col += sunColor * pow(d, 600.0) * 1.2;
+        col += sunColor * smoothstep(0.99955, 0.99975, d) * 3.0;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+// ---------- terrain ----------
+function buildTerrain(v) {
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGS, SEGS);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const col = new THREE.Color();
+  const tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const h = terrainHeight(x, z);
+    pos.setY(i, h);
+  }
+  geo.computeVertexNormals();
+  const nrm = geo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), h = pos.getY(i);
+    const w = cityWeight(x);
+    const slope = 1 - nrm.getY(i);
+    const a = h / MOUNTAIN_H;
+    col.copy(v.meadow);
+    const speck = hash2(Math.floor(x / 9), Math.floor(z / 9), 77);
+    tmp.copy(v.forest).offsetHSL(0, 0, (speck - 0.5) * 0.12);
+    col.lerp(tmp, smoothstep(0.2, 0.28, a) * (1 - smoothstep(0.4, 0.48, a)));
+    col.lerp(v.rock, Math.max(smoothstep(0.44, 0.56, a), smoothstep(0.32, 0.55, slope)));
+    col.lerp(v.snow, smoothstep(0.6, 0.72, a) * (1 - smoothstep(0.45, 0.7, slope)));
+    col.lerp(v.shore, (1 - smoothstep(WATER_Y, WATER_Y + 5, h)));
+    col.lerp(v.valleyFog, (1 - smoothstep(WATER_Y - 5, WATER_Y + 70, h)) * 0.5);
+    if (w > 0) {
+      const cx = ((x % CELL) + CELL) % CELL, cz = ((z % CELL) + CELL) % CELL;
+      const isRoad = cx < ROAD || cz < ROAD;
+      tmp.copy(isRoad ? v.road : v.block);
+      col.lerp(tmp, w);
+    }
+    colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  return new THREE.Mesh(geo, mat);
+}
+
+function buildWater(v) {
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE);
+  geo.rotateX(-Math.PI / 2);
+  const c = v.skyHorizon.clone().lerp(v.water, v.waterMix);
+  const mat = new THREE.MeshPhongMaterial({ color: c, shininess: 120, specular: v.sun.clone().multiplyScalar(0.6), transparent: true, opacity: 0.92 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = WATER_Y;
+  return m;
+}
+
+// ---------- city ----------
+function windowTexture(v) {
+  const cv = document.createElement("canvas");
+  cv.width = 64; cv.height = 256;
+  const g = cv.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0, 0, 64, 256);
+  const win = v.window.getStyle();
+  for (let y = 3; y < 256; y += 8) for (let x = 3; x < 64; x += 8) {
+    const r = hash2(x, y, 999);
+    if (r < v.litFraction) { g.globalAlpha = 0.55 + r * 0.45; g.fillStyle = win; g.fillRect(x, y, 4, 4); }
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter;
+  return t;
+}
+
+function buildCity(v) {
+  const positions = [];
+  const half = SIZE / 2;
+  for (let gx = -half; gx < half; gx += CELL) for (let gz = -half; gz < half; gz += CELL) {
+    const cx = gx + ROAD + (CELL - ROAD) / 2, cz = gz + ROAD + (CELL - ROAD) / 2;
+    const w = cityWeight(cx);
+    if (w <= 0.02) continue;
+    const r = hash2(gx / CELL, gz / CELL, SEED + 7);
+    if (r > w * 0.8) continue; 
+    const core = 1 - smoothstep(0, 1100, Math.abs(cz) + Math.max(0, 900 - cx) * 0.6);
+    const hh = hash2(gx / CELL, gz / CELL, SEED + 8);
+    let height = 7 + Math.pow(hh, 3.0) * (35 + 75 * core) + core * 6;
+    if (hh > 0.985) height += 70 * core;
+    positions.push({ x: cx, z: cz, h: height, y: terrainHeight(cx, cz) });
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  geo.translate(0, 0.5, 0);
+  const tex = windowTexture(v);
+  const mat = new THREE.MeshLambertMaterial({
+    color: v.facade, emissive: v.window, emissiveMap: tex, emissiveIntensity: v.windowGlow,
+  });
+  const mesh = new THREE.InstancedMesh(geo, mat, positions.length);
+  const m = new THREE.Matrix4();
+  const w = CELL - ROAD - 3;
+  positions.forEach((p, i) => {
+    const sx = w * (0.55 + hash2(i, 1, 3) * 0.45), sz = w * (0.55 + hash2(i, 2, 3) * 0.45);
+    m.makeScale(sx, p.h, sz); m.setPosition(p.x, p.y - 1, p.z);
+    mesh.setMatrixAt(i, m);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
+
+function buildStreetLights(v) {
+  const pts = [];
+  const half = SIZE / 2;
+  for (let gx = -half; gx < half; gx += CELL) for (let gz = -half; gz < half; gz += CELL) {
+    const w = cityWeight(gx);
+    if (w <= 0.05) continue;
+    const core = 1 - smoothstep(0, 1300, Math.abs(gz) + Math.max(0, 900 - gx) * 0.5);
+    const spacing = core > 0.6 ? 1 : core > 0.3 ? 2 : 3;
+    if ((Math.round(gx / CELL) % spacing) !== 0 && (Math.round(gz / CELL) % spacing) !== 0) continue;
+    if (hash2(gx, gz, 55) > w) continue;
+    const y = terrainHeight(gx + ROAD / 2, gz + ROAD / 2) + 4;
+    pts.push(gx + 1, y, gz + ROAD / 2, gx + ROAD - 1, y, gz + ROAD / 2, gx + ROAD / 2, y, gz + 1, gx + ROAD / 2, y, gz + ROAD - 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  const mat = new THREE.PointsMaterial({ color: v.street, size: v.streetSize, sizeAttenuation: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  return new THREE.Points(geo, mat);
+}
+
+// ---------- plane ----------
+function buildPlane() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.6, 14, 8), new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }));
+  body.rotation.x = Math.PI / 2; g.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3, 8), new THREE.MeshLambertMaterial({ color: 0xd94b3a }));
+  nose.rotation.x = -Math.PI / 2; nose.position.z = -8.5; g.add(nose);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(22, 0.35, 3.6), new THREE.MeshLambertMaterial({ color: 0xd94b3a }));
+  wing.position.z = -1; g.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 2.2), new THREE.MeshLambertMaterial({ color: 0xd94b3a }));
+  tail.position.z = 6; g.add(tail);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.5, 2.6), new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }));
+  fin.position.set(0, 1.8, 6.2); g.add(fin);
+  return g;
+}
+
+// ---------- views ----------
+const VIEWS = {
+  mountain: { label: "Mountain band", cam: [-1150, 300, 1000], look: [-1000, 170, -300], planeRoll: 0.18 },
+  transition: { label: "Biome Transition", cam: [-80, 260, 700], look: [120, 130, -500], planeRoll: -0.25 },
+  city: { label: "City band", cam: [700, 200, 650], look: [900, 95, -500], planeRoll: 0.1 },
+};
+
+function createRenderer(width, height) {
+  const canvas = document.createElement("canvas");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(width, height, false);
+  renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.9;
+  return renderer;
+}
+
+function buildScene(v) {
+  const scene = new THREE.Scene();
+  const el = THREE.MathUtils.degToRad(v.sunElev), az = THREE.MathUtils.degToRad(v.sunAz);
+  const sunDir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+  scene.add(makeSky(v, sunDir));
+  scene.fog = new THREE.FogExp2(v.fog, v.fogDensity);
+  const sun = new THREE.DirectionalLight(v.sun, v.sunIntensity);
+  sun.position.copy(sunDir).multiplyScalar(1000); scene.add(sun);
+  scene.add(new THREE.HemisphereLight(v.ambientSky, v.ambientGround, v.ambient));
+  scene.add(buildTerrain(v));
+  scene.add(buildWater(v));
+  scene.add(buildCity(v));
+  scene.add(buildStreetLights(v));
+  const plane = buildPlane(); scene.add(plane);
+  return { scene, plane };
+}
+
+function renderView(renderer, built, view, width, height) {
+  const cam = new THREE.PerspectiveCamera(58, width / height, 1, 9000);
+  cam.position.set(...view.cam);
+  cam.lookAt(...view.look);
+  const dir = new THREE.Vector3(...view.look).sub(cam.position).normalize();
+  built.plane.position.copy(cam.position).addScaledVector(dir, 42).add(new THREE.Vector3(0, -7, 0));
+  built.plane.lookAt(built.plane.position.clone().add(dir));
+  built.plane.rotateZ(view.planeRoll);
+  renderer.render(built.scene, cam);
+  return renderer.domElement.toDataURL("image/jpeg", 0.9);
+}
+
+
+const W = 1120, H = 630;
+const ELEMENTS = ["sun & sky", "fog", "mountain palette", "lakes", "city windows", "street lights"];
+const shots = {}; // shots[key][view] = dataURL
+
+const variantsEl = document.getElementById("variants");
+const keys = Object.keys(VARIANTS);
+
+for (const k of keys) {
+  const v = VARIANTS[k];
+  const sw = ["skyZenith","skyMid","skyHorizon","sun","fog","snow","rock","forest","meadow","water","window","street"];
+  variantsEl.insertAdjacentHTML("beforeend", `
+    <article class="card card-border bg-base-200 variant-card" id="variant-${k}" data-key="${k}">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-baseline gap-3">
+          <span class="badge badge-primary badge-lg font-mono">${k}</span>
+          <h2 class="card-title text-2xl">${v.name}</h2>
+          <span class="text-xs opacity-60">sun ${v.sunElev}&deg; above horizon</span>
+        </div>
+        <p class="opacity-80 -mt-2">${v.tagline}</p>
+        <div class="shot hero-shot" id="shot-${k}-mountain"><span class="tag">${VIEWS.mountain.label}</span></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="shot" id="shot-${k}-transition"><span class="tag">${VIEWS.transition.label}</span></div>
+          <div class="shot" id="shot-${k}-city"><span class="tag">${VIEWS.city.label}</span></div>
+        </div>
+        <div class="grid grid-cols-6 sm:grid-cols-12 gap-1" title="palette">
+          ${sw.map(n => `<div class="swatch" style="background:${v[n].getStyle()}" title="${n}"></div>`).join("")}
+        </div>
+        <div class="card-actions">
+          <button type="button" class="btn btn-sm btn-outline" data-lavish-action data-pick="${k}">Select ${k} as base</button>
+        </div>
+      </div>
+    </article>`);
+}
+
+// pick form
+const radios = document.getElementById("pick-radios");
+const borrow = document.getElementById("pick-borrow");
+for (const k of keys) {
+  radios.insertAdjacentHTML("beforeend", `<label class="label cursor-pointer justify-start gap-2 p-2 rounded-box border border-base-content/10"><input type="radio" class="radio radio-primary" name="base" value="${k}"> <span><span class="font-mono">${k}</span> ${VARIANTS[k].name}</span></label>`);
+}
+for (const e of ELEMENTS) {
+  borrow.insertAdjacentHTML("beforeend", `<label class="label justify-start gap-2 p-2"><span class="w-36 shrink-0">${e}</span><select class="select select-sm" name="borrow:${e}"><option value="">same as base</option>${keys.map(k => `<option value="${k}">${k} ${VARIANTS[k].name}</option>`).join("")}</select></label>`);
+}
+document.querySelectorAll("[data-pick]").forEach(b => b.addEventListener("click", () => {
+  const k = b.dataset.pick;
+  document.querySelector(`input[name=base][value=${k}]`).checked = true;
+  markSelected();
+  document.getElementById("decision").scrollIntoView({ behavior: "smooth" });
+}));
+document.getElementById("pick-form").addEventListener("change", markSelected);
+function markSelected() {
+  const k = new FormData(document.getElementById("pick-form")).get("base");
+  document.querySelectorAll(".variant-card").forEach(c => c.classList.toggle("selected", c.dataset.key === k));
+}
+document.getElementById("pick-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(ev.currentTarget);
+  const base = fd.get("base");
+  if (!base) { document.getElementById("queued").textContent = "Pick a base mood first."; return; }
+  const borrowed = {};
+  for (const e of ELEMENTS) { const from = fd.get(`borrow:${e}`); if (from && from !== base) borrowed[e] = from; }
+  const notes = (fd.get("notes") || "").trim();
+  const summary = `Scenery mood: ${base} ${VARIANTS[base].name}`
+    + (Object.keys(borrowed).length ? `; borrow ${Object.entries(borrowed).map(([e, f]) => `${e} from ${f}`).join(", ")}` : "")
+    + (notes ? `; notes: ${notes}` : "");
+  if (window.lavish?.queuePrompt) {
+    window.lavish.queuePrompt(`Encode this scenery preference into spec 001-first-flight: ${summary}. Add concrete palette/lighting requirements matching the chosen mock-up.`, {
+      tag: "choice", text: summary, element: ev.currentTarget,
+      data: { question: "scenery-mood", base, baseName: VARIANTS[base].name, borrowed, notes },
+    });
+    document.getElementById("queued").textContent = `Queued: ${summary}. Press Send to Agent when ready.`;
+  } else {
+    document.getElementById("queued").textContent = `Selected: ${summary} (open in Lavish to send).`;
+  }
+});
+
+// compare tabs
+const tabs = document.getElementById("compare-tabs");
+const compare = document.getElementById("compare");
+let compareView = "mountain";
+for (const [vk, view] of Object.entries(VIEWS)) {
+  tabs.insertAdjacentHTML("beforeend", `<button type="button" class="tab ${vk === compareView ? "tab-active" : ""}" data-view="${vk}">${view.label}</button>`);
+}
+tabs.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-view]"); if (!b) return;
+  compareView = b.dataset.view;
+  tabs.querySelectorAll(".tab").forEach(t => t.classList.toggle("tab-active", t === b));
+  renderCompare();
+});
+function renderCompare() {
+  compare.innerHTML = keys.map(k => `<div class="shot">${shots[k]?.[compareView] ? `<img alt="${VARIANTS[k].name} ${compareView}" src="${shots[k][compareView]}">` : ""}<span class="tag">${k} ${VARIANTS[k].name}</span></div>`).join("");
+}
+renderCompare();
+
+// render all views
+const status = document.getElementById("status"), statusText = document.getElementById("status-text");
+try {
+  const renderer = createRenderer(W, H);
+  let n = 0;
+  for (const k of keys) {
+    shots[k] = {};
+    statusText.textContent = `Rendering ${VARIANTS[k].name}...`;
+    await new Promise(r => setTimeout(r, 10));
+    const built = buildScene(VARIANTS[k]);
+    for (const [vk, view] of Object.entries(VIEWS)) {
+      const url = renderView(renderer, built, view, W, H);
+      shots[k][vk] = url;
+      const box = document.getElementById(`shot-${k}-${vk}`);
+      box.insertAdjacentHTML("afterbegin", `<img alt="${VARIANTS[k].name} - ${view.label}" src="${url}">`);
+      n++;
+      await new Promise(r => setTimeout(r, 0));
+    }
+    built.scene.traverse(o => { o.geometry?.dispose?.(); });
+  }
+  renderer.dispose();
+  renderCompare();
+  status.innerHTML = `<span class="badge badge-success badge-sm"></span><span>${n} views rendered. Scroll, compare, then pick below.</span>`;
+} catch (err) {
+  status.innerHTML = `<span class="badge badge-error badge-sm"></span><span>Rendering failed: ${err.message}. WebGL may be unavailable in this browser.</span>`;
+  console.error(err);
+}
+</script>
+</body>
+</html>
