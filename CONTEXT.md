@@ -50,14 +50,16 @@ out of range.
 _Avoid_: tile, patch, cell
 
 **Biome**:
-A named parameter set (terrain noise, palette, sky, fog, lighting, buildings) that gives a Biome
-Region its look. Current Biomes: Mountain, City.
+A named parameter set (terrain noise, palette, sky, fog, lighting, water level, buildings, city
+lights) that gives a Biome Region its look. Current Biomes: Mountain, City.
 _Avoid_: landscape, level, theme
 
 **Biome Region**:
-A contiguous stretch of the world assigned exactly one Biome. Regions alternate along the world.
+A band of the world, spanning it along one fixed axis, assigned exactly one Biome. Bands
+alternate across that axis; flying parallel to the bands stays in one Biome.
 _Avoid_: zone, area, sector
 
 **Biome Transition**:
-The fixed-length zone between two adjacent Biome Regions where their parameters blend.
+The fixed-width zone between two adjacent Biome Regions where their parameters blend as a
+function of position across the band axis.
 _Avoid_: boundary, border, blend zone

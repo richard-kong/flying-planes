@@ -34,4 +34,6 @@
 - Validated 2026-09-19 against the spec produced from a grill-with-docs interview; all
   decisions (scope, two Biomes, soft floor, bounded envelope, hint-only UI, `?seed=` override)
   were confirmed by the repository owner, so no clarification markers were needed.
+- Re-validated 2026-09-19 after `/speckit-clarify` (5 landscape questions: band layout, sun,
+  city lights, lakes/forest band, terrain style). 16/16 before, 16/16 after; no state changes.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
