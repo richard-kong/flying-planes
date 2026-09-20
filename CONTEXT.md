@@ -7,6 +7,11 @@ procedurally generated landscapes. This is the only context in the repo.
 
 ### Flight
 
+**Flight**:
+A continuous run of the Plane in one Theme and Seed. A pause preserves the run; a restart
+begins a new one.
+_Avoid_: game, level, round
+
 **Plane**:
 The single aircraft the user flies. There is exactly one per session.
 _Avoid_: aircraft, player, ship
@@ -41,8 +46,19 @@ _Avoid_: follow camera, third-person camera
 ### World
 
 **Seed**:
-The integer from which the entire world is deterministically generated. Same Seed, same world.
+The integer from which a Theme's world is deterministically generated. Same Theme and Seed,
+same world.
 _Avoid_: random seed, world id
+
+**Theme**:
+A complete world preset combining terrain character, regional variation, surface colours,
+sky, fog, and lighting; feature 002 specifies Nature, Alien Planet, and Arctic.
+_Avoid_: biome, skin, filter
+
+**Theme Chooser**:
+The view for selecting a Theme before starting or restarting a Flight. A pending choice is
+separate from the active Flight's Theme.
+_Avoid_: settings, biome picker, theme editor
 
 **Terrain Chunk**:
 A fixed-size square tile of terrain, generated on demand around the Plane and discarded when
