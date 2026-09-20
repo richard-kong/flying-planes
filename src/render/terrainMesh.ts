@@ -63,7 +63,7 @@ function buildIndex(res: number): BufferAttribute {
   return new BufferAttribute(idx, 1);
 }
 
-function makeTerrainGeometry(lod: number): BufferGeometry {
+export function makeTerrainGeometry(lod: number): BufferGeometry {
   const res = LOD_RESOLUTIONS[lod];
   const count = gridVertexCount(res);
   const g = new BufferGeometry();
@@ -84,7 +84,7 @@ function makeTerrainGeometry(lod: number): BufferGeometry {
 
 // Surface geometries share the terrain attribute layout so one material draws both; they are
 // sized to the worst-case clipped topology for their LOD, and carry their own pool.
-function makeSurfaceGeometry(lod: number): BufferGeometry {
+export function makeSurfaceGeometry(lod: number): BufferGeometry {
   const res = LOD_RESOLUTIONS[lod];
   const count = maxSurfaceVertices(res);
   const g = new BufferGeometry();

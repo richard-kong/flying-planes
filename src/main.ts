@@ -1,9 +1,10 @@
-// Bootstrap: seed -> renderer -> fixed-step loop (R12) with prev/curr interpolation.
-// 002: all terrain/biome/surface sampling runs through WorldContext; world residency,
-// streaming and preparation live in render/world.ts; theme uniforms stage atomically via
-// applyThemeToMaterial/applyThemeToSky. The fresh-input gate is enforced at every event
-// boundary; menus (Phase 3+) disarm it.
-import { PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from "three";
+// Bootstrap: page Seed -> renderer -> session state machine -> fixed-step loop (R12) with
+// prev/curr interpolation. 002 US1: boot renders a stationary Nature background while the
+// three real-terrain preview cards decode; Fly runs a deadline-sliced PreparationJob under
+// the opaque overlay and commits terrain/surface/sky/fog/pose atomically. Flight listeners
+// live on the canvas and only apply while the session is flying; every menu boundary closes
+// the fresh-input gate.
+import { PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
 import {
   CHUNK_SIZE,
   CHUNKS_PER_FRAME,
@@ -15,6 +16,7 @@ import {
 } from "./constants";
 import { parseSeed, randomSeed } from "./sim/seed";
 import {
+  disarmInputGate,
   inputGateArmed,
   inputInactive,
   passInputGate,
@@ -28,21 +30,40 @@ import {
 import { createPlaneState, stepFlight, type PlaneState } from "./sim/flight";
 import { createAutopilotState, stepAutopilot } from "./sim/autopilot";
 import { initCameraPose, stepCamera, type CameraPose } from "./sim/camera";
-import { themeById, type WorldContext } from "./sim/themes";
+import { themeById, type ThemeId, type WorldContext } from "./sim/themes";
+import {
+  bootReady,
+  createSession,
+  openChooser,
+  preparationFailed,
+  preparationReady,
+  pressCancel,
+  pressFly,
+  restoreFailed,
+  restoreReady,
+  selectTheme,
+  type ChooserState,
+} from "./sim/session";
 import { createPlaneMesh } from "./render/plane";
 import { applyThemeToSky, createSkyMesh, updateSkyMesh } from "./render/sky";
 import { applyThemeToMaterial, createTerrainMaterial } from "./render/terrainMaterial";
-import { createWorldRuntime } from "./render/world";
+import { createWorldRuntime, type PreparationJob } from "./render/world";
+import {
+  createPreviewSet,
+  disposePreviewSet,
+  PREVIEW_H,
+  PREVIEW_W,
+  renderNextPreview,
+  retryFailedPreviews,
+} from "./render/previews";
+import { createChooser } from "./ui/chooser";
 
-// --- Seed (FR-018) ---
+// --- Seed (FR-018): exactly one page Seed, parsed once ---
 const parsedSeed = parseSeed(location.search);
 const seed = parsedSeed ?? randomSeed();
 if (parsedSeed === undefined) {
   history.replaceState(null, "", `?seed=${seed}`);
 }
-
-// --- World context (002): boot flies the current (Alien) world until the chooser lands ---
-const bootWorld: WorldContext = { theme: themeById("alien"), seed };
 
 // --- Renderer / scene ---
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
@@ -68,25 +89,13 @@ const terrainMaterial = createTerrainMaterial();
 // camera.position is mutated in place by the pose lerp, so this reference stays current
 terrainMaterial.uniforms.uCamPos.value = camera.position;
 const planePosUniform = terrainMaterial.uniforms.uPlanePos.value as Vector2;
-// stage the whole Theme in one call so terrain, sky and fog change together (T016/T026)
+
+// --- Session + boot world (Nature stationary background, contract: booting -> choosing) ---
+const session: ChooserState = createSession(seed);
+const bootWorld: WorldContext = { theme: themeById("nature"), seed };
 applyThemeToMaterial(terrainMaterial, bootWorld.theme);
 applyThemeToSky(sky, bootWorld.theme);
-
 const world = createWorldRuntime(scene, terrainMaterial, bootWorld);
-
-function resize(): void {
-  renderer.setSize(innerWidth, innerHeight);
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  // recompute the steer vector at the new viewport for the last pointer position;
-  // not a user event, so it must not count as fresh activity (T063) and must not arm a
-  // closed input gate. Skipped when the pointer has left the window (input.active false)
-  // so a resize can't resurrect a stale steering position.
-  if (hasPointer && input.active && inputGateArmed(input)) {
-    pointerToSteer(lastPointerX, lastPointerY, innerWidth, innerHeight, input, simTime, false);
-  }
-}
-addEventListener("resize", resize);
 
 // --- Input state (preallocated; only the handlers below write it) ---
 const input: FlightInput = {
@@ -95,43 +104,398 @@ const input: FlightInput = {
   throttle: 0.5,
   active: false,
   lastInputTime: 0,
-  gateArmed: true,
+  gateArmed: false, // boot opens the chooser — flight input requires a fresh event
 };
 let simTime = 0;
-let inputSeen = false; // any steering/throttle event so far (hint + autopilot semantics)
+let inputSeen = false;
 let touchStartX = 0;
 let touchStartY = 0;
-let pinchDist = 0; // finger separation at the previous pinch event; 0 = not pinching
-let hasPointer = false; // a pointer position has been seen at least once (T063)
+let pinchDist = 0;
+let hasPointer = false;
 let lastPointerX = 0;
 let lastPointerY = 0;
-// Throttle intents are buffered per frame: last device wins over others in the same frame
-// (Edge Cases: wheel + pinch). Pinch ratios compose while no wheel event interleaves.
 let pendingWheelDelta: number | null = null;
 let pendingPinchScale = 1;
 let hasPendingThrottle = false;
 
-addEventListener("pointermove", (e) => {
-  if (e.pointerType === "touch") return; // touch steering comes from touch events
+// --- Sim state (rebuilt wholesale on every Fly — fresh defaults, lifecycle rule 5) ---
+let curr: PlaneState = createPlaneState(bootWorld);
+let prev: PlaneState = createPlaneState(bootWorld);
+const autopilot = createAutopilotState();
+const steerOut: FlightInput = {
+  steerX: 0,
+  steerY: 0,
+  throttle: 0.5,
+  active: false,
+  lastInputTime: 0,
+  gateArmed: false,
+};
+const pose: CameraPose = {
+  position: new Vector3(),
+  target: new Vector3(0, 0, 1),
+  up: new Vector3(0, 1, 0),
+};
+const posePrev: CameraPose = {
+  position: new Vector3(),
+  target: new Vector3(0, 0, 1),
+  up: new Vector3(0, 1, 0),
+};
+initCameraPose(pose, curr, bootWorld);
+posePrev.position.copy(pose.position);
+posePrev.target.copy(pose.target);
+posePrev.up.copy(pose.up);
+plane.position.copy(curr.position);
+plane.quaternion.copy(curr.orientation);
+
+// Paused-flight snapshot (T045 basic form — US3 extends it).
+interface FlightSnapshot {
+  plane: PlaneState;
+  prev: PlaneState;
+  pose: CameraPose;
+  posePrev: CameraPose;
+  simTime: number;
+  throttle: number;
+  lastInputTime: number;
+  inputSeen: boolean;
+  hintHidden: boolean;
+  themeId: ThemeId;
+}
+let snapshot: FlightSnapshot | null = null;
+
+function takeSnapshot(): FlightSnapshot {
+  return {
+    plane: {
+      position: curr.position.clone(),
+      orientation: curr.orientation.clone(),
+      heading: curr.heading,
+      pitch: curr.pitch,
+      roll: curr.roll,
+      speed: curr.speed,
+    },
+    prev: {
+      position: prev.position.clone(),
+      orientation: prev.orientation.clone(),
+      heading: prev.heading,
+      pitch: prev.pitch,
+      roll: prev.roll,
+      speed: prev.speed,
+    },
+    pose: { position: pose.position.clone(), target: pose.target.clone(), up: pose.up.clone() },
+    posePrev: {
+      position: posePrev.position.clone(),
+      target: posePrev.target.clone(),
+      up: posePrev.up.clone(),
+    },
+    simTime,
+    throttle: input.throttle,
+    lastInputTime: input.lastInputTime,
+    inputSeen,
+    hintHidden,
+    themeId: session.active ?? "nature",
+  };
+}
+
+function applySnapshot(s: FlightSnapshot): void {
+  curr.position.copy(s.plane.position);
+  curr.orientation.copy(s.plane.orientation);
+  curr.heading = s.plane.heading;
+  curr.pitch = s.plane.pitch;
+  curr.roll = s.plane.roll;
+  curr.speed = s.plane.speed;
+  prev.position.copy(s.prev.position);
+  prev.orientation.copy(s.prev.orientation);
+  prev.heading = s.prev.heading;
+  prev.pitch = s.prev.pitch;
+  prev.roll = s.prev.roll;
+  prev.speed = s.prev.speed;
+  pose.position.copy(s.pose.position);
+  pose.target.copy(s.pose.target);
+  pose.up.copy(s.pose.up);
+  posePrev.position.copy(s.posePrev.position);
+  posePrev.target.copy(s.posePrev.target);
+  posePrev.up.copy(s.posePrev.up);
+  simTime = s.simTime;
+  input.throttle = s.throttle;
+  input.lastInputTime = s.lastInputTime;
+  inputSeen = s.inputSeen;
+  hintHidden = s.hintHidden;
+  hintEl?.classList.toggle("hidden", s.hintHidden);
+}
+
+// --- Chooser DOM ---
+const chooserEl = document.getElementById("chooser") as HTMLElement;
+const prepOverlay = document.getElementById("prep-overlay") as HTMLElement;
+const hintEl = document.getElementById("hint");
+const changeThemeBtn = document.getElementById("change-theme") as HTMLButtonElement;
+let hintHidden = false;
+
+const chooser = createChooser({
+  onSelect(id) {
+    selectTheme(session, id);
+    chooser.sync(session);
+  },
+  onFly() {
+    const req = pressFly(session);
+    if (!req) return;
+    launch(req.themeId, req.generation, req.kind);
+  },
+  onCancel() {
+    cancelOrResume();
+  },
+  onRetry() {
+    retryFailed();
+  },
+});
+
+function syncChooser(): void {
+  chooser.sync(session);
+  chooserEl.dataset.phase = session.phase;
+  document.body.dataset.phase = session.phase;
+  changeThemeBtn.hidden = session.phase !== "flying";
+}
+
+// --- Launch / preparation / restore pipeline ---
+
+let liveJob: PreparationJob | null = null;
+const PREP_DEADLINE_MS = 7; // per-frame slice budget; leaves headroom inside a 60fps frame
+
+function freshFlight(w: WorldContext): void {
+  curr = createPlaneState(w);
+  prev = createPlaneState(w);
+  initCameraPose(pose, curr, w);
+  posePrev.position.copy(pose.position);
+  posePrev.target.copy(pose.target);
+  posePrev.up.copy(pose.up);
+  plane.position.copy(curr.position);
+  plane.quaternion.copy(curr.orientation);
+  autopilot.engaged = false;
+  autopilot.engagedAt = 0;
+  autopilot.lastSeenInputTime = -Infinity;
+  simTime = 0;
+  inputSeen = false;
+  input.steerX = 0;
+  input.steerY = 0;
+  input.active = false;
+  input.throttle = 0.5;
+  disarmInputGate(input); // first flight event after launch must be fresh (rule 10)
+  hasPendingThrottle = false;
+  pendingWheelDelta = null;
+  pendingPinchScale = 1;
+  hintHidden = false;
+  hintEl?.classList.remove("hidden");
+}
+
+function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch" | "restore"): void {
+  const theme = themeById(themeId);
+  const targetWorld: WorldContext = { theme, seed: session.seed };
+  // stage a launch anchor from a probe plane state so coverage starts where the
+  // commit will land the player (data-model: visible coverage + movement margin)
+  const probe = createPlaneState(targetWorld);
+  // releasing the old residency happens at Fly (rule 7): the boot background and any
+  // paused world both return to the shared pools — candidates fill a private table
+  world.reset();
+  prepOverlay.hidden = false;
+  prepOverlay.textContent = "";
+  disarmInputGate(input);
+  chooser.setStatus(`Preparing ${theme.name}…`);
+
+  // a startup retry finishes failed preview work before terrain preparation begins
+  const begin = () => {
+    const job: PreparationJob = {
+      generation,
+      themeId,
+      seed: session.seed,
+      kind,
+      phase: "terrain",
+      deadline: PREP_DEADLINE_MS,
+      readiness: 0,
+      cancelled: false,
+    };
+    if (!world.beginPreparation(job, probe.position.x, probe.position.z, probe.heading)) {
+      preparationFailed(session, generation, "a preparation is already running");
+      chooser.sync(session);
+      prepOverlay.hidden = true;
+      return;
+    }
+    liveJob = job;
+  };
+
+  if (kind === "startup" && previewSet.cards.some((c) => c.status === "failed")) {
+    void (async () => {
+      try {
+        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget);
+      } catch {
+        // card-level failure is non-fatal for launch; retry stays available
+      }
+      begin();
+    })();
+  } else {
+    begin();
+  }
+}
+
+// --- Preview cards (T025-T027) ---
+const previewTarget = new WebGLRenderTarget(PREVIEW_W, PREVIEW_H, {
+  depthBuffer: true,
+  stencilBuffer: false,
+  samples: 0,
+  type: UnsignedByteType,
+  format: RGBAFormat,
+  generateMipmaps: false,
+});
+const previewSet = createPreviewSet();
+
+let previewsStarted = false;
+async function runPreviews(): Promise<void> {
+  for (let i = 0; i < previewSet.cards.length; i++) {
+    try {
+      await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget);
+    } catch {
+      // renderNextPreview marks the card failed itself; keep pumping
+    }
+    const card = previewSet.cards[i];
+    chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+    if (session.phase === "booting") {
+      chooser.setStatus(`Rendering previews… ${i + 1}/3`);
+    }
+    // keep the rAF loop alive between cards — never block boot on a card burst
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  if (previewSet.done) {
+    bootReady(session);
+    chooser.setStatus("Choose a world, then press Fly.");
+    document.body.dataset.readyChooser = "true";
+  } else {
+    bootReady(session); // chooser opens degraded; per-card retry offered in error text
+    session.error = {
+      kind: "startup",
+      themeId: null,
+      message: "one or more previews failed to render",
+    };
+    chooser.setStatus("Choose a world, then press Fly.");
+  }
+  syncChooser();
+}
+
+// --- Cancel / restore ---
+
+function cancelOrResume(): void {
+  const result = pressCancel(session);
+  if (result === null) return;
+  if (result === "resume") {
+    // prior terrain still resident: re-present the snapshot directly
+    const snap = snapshot;
+    if (snap) applySnapshot(snap);
+    restoreReady(session, session.generation);
+    chooser.close();
+    prepOverlay.hidden = true;
+    syncChooser();
+    return;
+  }
+  // "restoring": invalidate the candidate job, rebuild the snapshot world
+  if (liveJob) world.cancelPreparation(liveJob);
+  liveJob = null;
+  const snap = snapshot;
+  if (!snap) {
+    // defensive: contract never offers Cancel without a prior flight
+    restoreFailed(session, session.generation, "no snapshot to restore");
+    syncChooser();
+    return;
+  }
+  prepOverlay.hidden = false;
+  chooser.setStatus("Restoring your flight…");
+  const job: PreparationJob = {
+    generation: session.generation,
+    themeId: snap.themeId,
+    seed: session.seed,
+    kind: "restore",
+    phase: "terrain",
+    deadline: PREP_DEADLINE_MS,
+    readiness: 0,
+    cancelled: false,
+  };
+  if (!world.beginPreparation(job, snap.plane.position.x, snap.plane.position.z, snap.plane.heading)) {
+    restoreFailed(session, session.generation, "could not restart the restore");
+    syncChooser();
+    prepOverlay.hidden = true;
+    return;
+  }
+  liveJob = job;
+}
+
+function retryFailed(): void {
+  if (session.error?.kind === "startup") {
+    void (async () => {
+      try {
+        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget);
+      } catch {
+        /* per-card status already set */
+      }
+      for (const card of previewSet.cards) {
+        chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+      }
+      if (previewSet.done) {
+        session.error = null;
+        chooser.setStatus("Choose a world, then press Fly.");
+      }
+      chooser.sync(session);
+    })();
+    return;
+  }
+  if (session.error?.kind === "restore") {
+    cancelOrResume(); // restores again under the same snapshot
+    return;
+  }
+  // launch failure: Fly again on the retained selection
+  const req = pressFly(session);
+  if (req) launch(req.themeId, req.generation, req.kind);
+}
+
+// --- Change theme ---
+changeThemeBtn.addEventListener("click", () => {
+  if (!openChooser(session)) return;
+  snapshot = takeSnapshot();
+  disarmInputGate(input);
+  chooser.open();
+  syncChooser();
+});
+
+// --- Input: all flight listeners on the canvas, gated to the flying phase ---
+
+function flightActive(): boolean {
+  return session.phase === "flying";
+}
+
+function resize(): void {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  // remaps only an already-active flight pointer; never arms a closed gate (rule 10)
+  if (flightActive() && hasPointer && input.active && inputGateArmed(input)) {
+    pointerToSteer(lastPointerX, lastPointerY, innerWidth, innerHeight, input, simTime, false);
+  }
+}
+addEventListener("resize", resize);
+
+canvas.addEventListener("pointermove", (e) => {
+  if (e.pointerType === "touch" || !flightActive()) return;
   hasPointer = true;
   lastPointerX = e.clientX;
   lastPointerY = e.clientY;
-  // a drag (buttons held) is a held continuation; a plain hover is discrete
   if (passInputGate(input, e.buttons > 0 ? "held" : "discrete")) {
     pointerToSteer(e.clientX, e.clientY, innerWidth, innerHeight, input, simTime);
   }
   inputSeen = true;
 });
-addEventListener("pointerdown", () => {
-  // a click is a discrete event; while the gate is closed it arms without steering
+canvas.addEventListener("pointerdown", () => {
   passInputGate(input, "discrete");
 });
-addEventListener("pointerup", () => releaseInputGate(input));
-addEventListener("pointerleave", () => {
+canvas.addEventListener("pointerup", () => releaseInputGate(input));
+canvas.addEventListener("pointerleave", () => {
   releaseInputGate(input);
   inputInactive(input);
 });
-addEventListener("pointercancel", () => {
+canvas.addEventListener("pointercancel", () => {
   releaseInputGate(input);
   inputInactive(input);
 });
@@ -152,15 +516,13 @@ function pinchDistance(e: TouchEvent): number {
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 }
 
-addEventListener("touchstart", (e) => {
+canvas.addEventListener("touchstart", (e) => {
+  if (!flightActive()) return;
   if (e.touches.length === 1) {
-    // new single-finger gesture: fresh drag origin, steering resets to zero at the origin
     const t = e.touches[0];
     touchStartX = t.clientX;
     touchStartY = t.clientY;
     pinchDist = 0;
-    // touch-down is a discrete event — dropped while disarmed (arms the gate), applied
-    // otherwise; either way it counts as activity even before a drag
     if (passInputGate(input, "discrete")) {
       touchDragToSteer(0, 0, input, simTime);
     }
@@ -175,11 +537,11 @@ addEventListener("touchstart", (e) => {
     inputSeen = true;
   }
 });
-addEventListener(
+canvas.addEventListener(
   "touchmove",
   (e) => {
+    if (!flightActive()) return;
     if (e.touches.length === 2) {
-      // pinch throttles; steering is frozen while two fingers are down (Edge Cases)
       const d = pinchDistance(e);
       if (pinchDist > 0) {
         if (pendingWheelDelta !== null) {
@@ -197,7 +559,6 @@ addEventListener(
     pinchDist = 0;
     const t = e.touches[0];
     const lt = input.lastInputTime;
-    // a drag is a held continuation: it must not arm a closed gate or steer through it
     if (passInputGate(input, "held")) {
       touchDragToSteer(t.clientX - touchStartX, t.clientY - touchStartY, input, simTime);
     }
@@ -205,10 +566,9 @@ addEventListener(
   },
   { passive: true },
 );
-addEventListener("touchend", (e) => {
+canvas.addEventListener("touchend", (e) => {
+  if (!flightActive()) return;
   if (e.touches.length === 1) {
-    // one finger lifted: steering resumes from the remaining finger's new start point,
-    // and the vector resets to zero there rather than retaining the prior drag (T059)
     const t = e.touches[0];
     touchStartX = t.clientX;
     touchStartY = t.clientY;
@@ -219,19 +579,19 @@ addEventListener("touchend", (e) => {
     return;
   }
   pinchDist = 0;
-  releaseInputGate(input); // all fingers up = a release: the next touch is fresh
+  releaseInputGate(input);
   inputInactive(input);
 });
-addEventListener("touchcancel", () => {
+canvas.addEventListener("touchcancel", () => {
   pinchDist = 0;
   releaseInputGate(input);
   inputInactive(input);
 });
-addEventListener(
+canvas.addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    // a wheel tick is discrete: while disarmed it arms the gate without applying throttle
+    if (!flightActive()) return;
     if (!passInputGate(input, "discrete")) {
       inputSeen = true;
       return;
@@ -244,43 +604,6 @@ addEventListener(
   { passive: false },
 );
 
-// --- Hint (US5): fades on the first steer/throttle change or after HINT_TIMEOUT ---
-const hintEl = document.getElementById("hint");
-let hintHidden = false;
-
-// --- Sim state ---
-const curr: PlaneState = createPlaneState(bootWorld);
-const prev: PlaneState = createPlaneState(bootWorld);
-const autopilot = createAutopilotState();
-const steerOut: FlightInput = {
-  steerX: 0,
-  steerY: 0,
-  throttle: 0.5,
-  active: false,
-  lastInputTime: 0,
-  gateArmed: true,
-};
-const pose: CameraPose = {
-  position: new Vector3(),
-  target: new Vector3(0, 0, 1),
-  up: new Vector3(0, 1, 0),
-};
-const posePrev: CameraPose = {
-  position: new Vector3(),
-  target: new Vector3(0, 0, 1),
-  up: new Vector3(0, 1, 0),
-};
-
-// First frame (T054): converge the camera onto the plane before the loop starts so an
-// early rAF callback (elapsed < SIM_DT, zero sim steps) still renders the plane airborne
-// and framed behind-and-above instead of a camera at the origin.
-initCameraPose(pose, curr, bootWorld);
-posePrev.position.copy(pose.position);
-posePrev.target.copy(pose.target);
-posePrev.up.copy(pose.up);
-plane.position.copy(curr.position);
-plane.quaternion.copy(curr.orientation);
-
 function stepSim(dt: number): void {
   prev.position.copy(curr.position);
   prev.orientation.copy(curr.orientation);
@@ -292,19 +615,29 @@ function stepSim(dt: number): void {
   stepCamera(pose, curr, dt, world.world);
 }
 
-// --- Fixed-step loop (R12): accumulator, max steps then drop, prev/curr interpolation ---
+// --- Fixed-step loop (R12) ---
 let accumulator = 0;
 let lastNow = performance.now();
 const interpTarget = new Vector3();
+let firstFrameMarked = false;
+
+// launch/restore verification injection (T029) — absent from the production bundle
+declare global {
+  // eslint-disable-next-line no-var
+  var __verifyLaunch: ((themeId: ThemeId) => "fail" | { delay: number } | undefined) | undefined;
+}
+function verifyLaunchInject(themeId: ThemeId): "fail" | { delay: number } | undefined {
+  if (!__VERIFY_HOOKS__) return undefined;
+  return globalThis.__verifyLaunch?.(themeId);
+}
 
 function frame(now: number): void {
   let elapsed = (now - lastNow) / 1000;
   lastNow = now;
-  if (elapsed > 0.25) elapsed = 0.25; // hidden-tab guard (Edge Cases)
+  if (elapsed > 0.25) elapsed = 0.25;
   accumulator += elapsed;
 
-  // apply the frame's winning throttle intent against the pre-frame throttle value
-  if (hasPendingThrottle) {
+  if (hasPendingThrottle && flightActive()) {
     if (pendingWheelDelta !== null) wheelToThrottle(pendingWheelDelta, input, simTime);
     else pinchToThrottle(pendingPinchScale, input, simTime);
     pendingWheelDelta = null;
@@ -312,23 +645,81 @@ function frame(now: number): void {
     hasPendingThrottle = false;
   }
 
-  let steps = 0;
-  while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS_PER_FRAME) {
-    stepSim(SIM_DT);
-    simTime += SIM_DT;
-    accumulator -= SIM_DT;
-    steps += 1;
-  }
-  if (steps === MAX_SIM_STEPS_PER_FRAME && accumulator > 0) {
-    // sustained low frame rate: take one variable step instead of dropping time (FR-008)
-    stepSim(accumulator);
-    simTime += accumulator;
-    accumulator = 0;
+  // drive the live preparation/restore inside its deadline slice
+  if (liveJob && (session.phase === "preparing" || session.phase === "restoring")) {
+    const inject = verifyLaunchInject(liveJob.themeId);
+    let failed: string | null = null;
+    try {
+      if (inject === "fail") throw new Error("verify: launch failed");
+      world.stepPreparation(liveJob);
+      if (inject && typeof inject === "object") liveJob.readiness = Math.min(1, liveJob.readiness);
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+    }
+    if (failed) {
+      const job = liveJob;
+      world.cancelPreparation(job);
+      liveJob = null;
+      prepOverlay.hidden = true;
+      if (job.kind === "restore") restoreFailed(session, job.generation, failed);
+      else preparationFailed(session, job.generation, failed);
+      syncChooser();
+      chooser.open();
+    } else if (liveJob && liveJob.readiness >= 1) {
+      const job = liveJob;
+      // atomic commit: theme uniforms + candidate world + flight state in one step
+      const theme = themeById(job.themeId);
+      applyThemeToMaterial(terrainMaterial, theme);
+      applyThemeToSky(sky, theme);
+      if (!world.commitPreparation(job)) {
+        liveJob = null;
+        prepOverlay.hidden = true;
+        preparationFailed(session, job.generation, "preparation was superseded");
+        syncChooser();
+        chooser.open();
+      } else {
+        liveJob = null;
+        if (job.kind === "restore" && snapshot) {
+          applySnapshot(snapshot);
+        } else {
+          freshFlight(world.world);
+        }
+        accumulator = 0;
+        lastNow = now;
+        prepOverlay.hidden = true;
+        if (job.kind === "restore") {
+          restoreReady(session, job.generation);
+        } else {
+          preparationReady(session, job.generation);
+        }
+        chooser.close();
+        syncChooser();
+      }
+    } else if (liveJob) {
+      prepOverlay.textContent = `Preparing ${themeById(liveJob.themeId).name}… ${Math.floor(liveJob.readiness * 100)}%`;
+      chooser.setStatus(prepOverlay.textContent);
+    }
   }
 
-  if (!hintHidden && (inputSeen || simTime >= HINT_TIMEOUT)) {
-    hintHidden = true;
-    hintEl?.classList.add("hidden");
+  if (flightActive()) {
+    let steps = 0;
+    while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS_PER_FRAME) {
+      stepSim(SIM_DT);
+      simTime += SIM_DT;
+      accumulator -= SIM_DT;
+      steps += 1;
+    }
+    if (steps === MAX_SIM_STEPS_PER_FRAME && accumulator > 0) {
+      stepSim(accumulator);
+      simTime += accumulator;
+      accumulator = 0;
+    }
+    if (!hintHidden && (inputSeen || simTime >= HINT_TIMEOUT)) {
+      hintHidden = true;
+      hintEl?.classList.add("hidden");
+    }
+  } else {
+    accumulator = 0; // menu time never enters the simulation
   }
 
   const alpha = accumulator / SIM_DT;
@@ -338,20 +729,44 @@ function frame(now: number): void {
   interpTarget.lerpVectors(posePrev.target, pose.target, alpha);
   camera.up.lerpVectors(posePrev.up, pose.up, alpha).normalize();
   camera.lookAt(interpTarget);
-  // lookAt only sets the quaternion; the sky's inverse-view-projection needs the fresh
-  // world matrix before updateSkyMesh consumes it (T064)
   camera.updateMatrixWorld();
 
-  // stream the chunk disc around the plane; fills are bounded per frame and defer on
-  // pool misses instead of allocating (002 T015)
-  world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
+  if (session.phase !== "preparing" && session.phase !== "restoring") {
+    world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
+  }
 
-  // chunk morph bands track the plane's position in world space (T056)
   planePosUniform.set(plane.position.x, plane.position.z);
-
   updateSkyMesh(sky, camera);
   renderer.render(scene, camera);
+  if (!firstFrameMarked) {
+    firstFrameMarked = true;
+    document.body.dataset.firstFrame = "true";
+  }
   requestAnimationFrame(frame);
 }
-resize(); // initial viewport fit (needs input/simTime/hasPointer initialised above)
+
+addEventListener("pagehide", () => {
+  // bounded teardown: resident/free geometry, preview cards and the shared target
+  world.dispose();
+  disposePreviewSet(previewSet);
+  previewTarget.dispose();
+  terrainMaterial.dispose();
+  sky.geometry.dispose();
+  (sky.material as { dispose(): void }).dispose();
+  renderer.dispose();
+});
+
+// --- Boot: stationary Nature behind the chooser, previews decode sequentially ---
+chooserEl.dataset.phase = session.phase;
+document.body.dataset.phase = session.phase;
+resize();
 requestAnimationFrame(frame);
+// first frame renders before previews start (separate first-frame vs ready-chooser marks)
+requestAnimationFrame(() => {
+  if (!previewsStarted) {
+    previewsStarted = true;
+    void runPreviews();
+  }
+  chooser.open();
+  syncChooser();
+});

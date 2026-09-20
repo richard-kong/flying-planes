@@ -68,6 +68,18 @@ describe("webgl smoke", () => {
     "renders real WebGL2 frames with terrain, sky, and the plane — no shader errors",
     async () => {
       await page.goto(`${BASE}/?seed=42&renderTest`, { waitUntil: "load" });
+      // 002: the chooser opens first — select Alien (the original world) and launch it
+      await page.waitForFunction(
+        () =>
+          document.body.dataset.readyChooser === "true" ||
+          document.body.dataset.phase === "choosing",
+        { timeout: 120_000 },
+      );
+      await page.click('#chooser input[value="alien"]');
+      await page.click("#fly");
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+        timeout: 120_000,
+      });
 
       // let the sim run a few seconds so terrain streams in and the camera settles
       let stats: PixelStats | null = null;

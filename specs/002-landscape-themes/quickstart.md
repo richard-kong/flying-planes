@@ -247,3 +247,20 @@ Suggested results table (fill per device, not in this planning PR):
 | Fifty changes | Stable memory/resources; no mixed frames or failures | Pending |
 | Visual and accessibility scenarios | All required cues/flows | Pending |
 | 60-minute rendered soak and recovery | No terrain/precision/recovery failure | Pending |
+
+
+## US1 verification (T031)
+
+`npm run test:browser` against the isolated verification bundle: 17/17 passing
+(2026-09-20, SwiftShader Chromium). Covered: boot to stationary Nature behind the chooser
+with all three decoded real-terrain cards; valid/malformed/missing Seed; reload resets to
+Nature; first-frame and ready-chooser milestones recorded separately; single-activation
+Nature launch vs select+Fly for Arctic/Alien; preview decode, blob URL caching across
+reopens, injected card failure -> text fallback + startup error + retry path; labelled
+radio group, >=44 CSS px targets, visible focus, Tab wrap inside the dialog, radio arrows,
+Enter on Fly, Escape = conditional Cancel; menu pointer/wheel/drag events confirmed not to
+reach the flight sim (fresh-input gate + canvas-scoped listeners + flying-phase check).
+Renderer state save/restore around each preview card runs in try/finally before the async
+readback; card geometry is disposed per card and object URLs revoked on discard. Reference
+- device timing (SC-001 2 s budgets) deferred to T060-T062 owner checks — SwiftShader CPU
+rendering cannot establish them.
