@@ -5,7 +5,7 @@
 // the altitude/slope palette, forest speckle, warm/cool sun shading, gold lakes with a
 // Blinn specular, and lavender fog that resolves to the shared skyGradient at the horizon
 // (FR-022b/c/d/e/g).
-import { Color, ShaderMaterial, Uniform, Vector2, Vector3 } from "three";
+import { Color, Matrix4, ShaderMaterial, Uniform, Vector2, Vector3 } from "three";
 import {
   CHUNK_SIZE,
   COLOR_FOG_FAR,
@@ -62,6 +62,7 @@ ${SKY_GRADIENT_GLSL}
 uniform float uWaterLevel;
 uniform float uSpeckleSize;
 uniform vec3 uCamPos;
+uniform mat4 uViewProj; // projection * viewInverse, refreshed per frame
 uniform vec3 uSnow;
 uniform vec3 uRock;
 uniform vec3 uForest;
@@ -87,7 +88,7 @@ void main() {
   vec3 ray = vWorldPos - uCamPos;
   float rayY = abs(ray.y) < 0.00001 ? (ray.y < 0.0 ? -0.00001 : 0.00001) : ray.y;
   waterPos = uCamPos + ray * ((uWaterLevel - uCamPos.y) / rayY);
-  vec4 waterClip = projectionMatrix * viewMatrix * vec4(waterPos, 1.0);
+  vec4 waterClip = uViewProj * vec4(waterPos, 1.0);
   gl_FragDepth = wWater > 0.5 ? 0.5 * waterClip.z / waterClip.w + 0.5 : gl_FragCoord.z;
   vec3 surfacePos = wWater > 0.5 ? waterPos : vWorldPos;
   vec3 n = wWater > 0.5 ? vec3(0.0, 1.0, 0.0) : normalize(vNormal);
@@ -157,6 +158,7 @@ export function createTerrainMaterial(): ShaderMaterial {
       uChunkSize: new Uniform(CHUNK_SIZE),
       uPlanePos: new Uniform(new Vector2()),
       uCamPos: new Uniform(new Vector3()),
+      uViewProj: new Uniform(new Matrix4()),
       uSnow: new Uniform(new Color(COLOR_SNOW)),
       uRock: new Uniform(new Color(COLOR_ROCK)),
       uForest: new Uniform(new Color(COLOR_FOREST)),

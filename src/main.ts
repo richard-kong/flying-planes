@@ -1,5 +1,5 @@
 // Bootstrap: seed -> renderer -> fixed-step loop (R12) with prev/curr interpolation.
-import { Mesh, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from "three";
+import { Matrix4, Mesh, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from "three";
 import {
   CHUNK_SIZE,
   CHUNKS_PER_FRAME,
@@ -57,6 +57,8 @@ const terrainMaterial = createTerrainMaterial();
 // camera.position is mutated in place by the pose lerp, so this reference stays current
 terrainMaterial.uniforms.uCamPos.value = camera.position;
 const planePosUniform = terrainMaterial.uniforms.uPlanePos.value as Vector2;
+// view * projection for the water-plane depth projection in the terrain fragment shader
+const viewProjUniform = terrainMaterial.uniforms.uViewProj.value as Matrix4;
 const chunkGrid = createChunkGrid(VIEW_RINGS);
 const chunkPool = createChunkPool();
 const chunkMeshes = createCoordTable<Mesh>();
@@ -283,6 +285,7 @@ function frame(now: number): void {
   // lookAt only sets the quaternion; the sky's inverse-view-projection needs the fresh
   // world matrix before updateSkyMesh consumes it (T064)
   camera.updateMatrixWorld();
+  viewProjUniform.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
 
   // stream the chunk disc around the plane; fill at most CHUNKS_PER_FRAME new chunks
   chunkGrid.update(curr.position.x, curr.position.z, toLoad, toFree);
