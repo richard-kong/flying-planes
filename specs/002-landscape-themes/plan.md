@@ -19,8 +19,23 @@ prevent stale work or mixed-Theme frames. Static cards render actual Theme terra
 fixed Seed using the existing renderer.
 
 The design includes the overlapping First Flight convergence fixes and an owner-run laptop/phone
-benchmark guide. It does not implement the feature, generate tasks, or close existing backlog
-items. Next workflow command: `/speckit-tasks`.
+benchmark guide. Implementation work is now ordered in [tasks.md](./tasks.md); generating that
+list does not implement the feature or close existing backlog items.
+
+### Task-generation baseline
+
+The task list was generated against `main` at `d4ae026`, after the First Flight convergence code
+and approved N4/A4 prototypes merged. The prerequisite descriptions below and in the research
+record describe the earlier planning baseline. Reuse the merged `CoordTable`, LOD replacement and
+morph work, input fixes, opening poses and sky sync; extend them for Themes instead of repeating
+their original fixes. The existing bounded coordinate table replaces the earlier proposed toroidal
+rewrite; mesh/pool exhaustion, preparation and cancellation still need the bounds described here.
+
+The real smoke now exists in `tests/render/webgl.test.ts` using Puppeteer. Migrate that coverage
+to the planned isolated Playwright/Vitest suite and remove Puppeteer, rather than adding duplicate
+drivers. The planned clipped shoreline topology still replaces the current fragment-depth approach.
+001 T053/T065 are already resolved; preserve those fixes. T060/T061 remain acceptance obligations.
+Nature and Arctic implementation follows the approved N4/A4 references in the specification.
 
 ## Technical Context
 
@@ -198,12 +213,14 @@ specs/002-landscape-themes/
 ├── research.md
 ├── data-model.md
 ├── quickstart.md
+├── tasks.md
 └── contracts/
     ├── themes.ts
     └── lifecycle.md
 ```
 
-`tasks.md` is intentionally absent until `/speckit-tasks`.
+`tasks.md` groups implementation and acceptance work by user story, including prerequisite
+regressions and the remaining owner-device gates.
 
 ### Proposed implementation locations
 
@@ -242,7 +259,8 @@ Cancel requirements with concrete callers. Pure mechanics remain independently t
 
 Research decisions, data model, internal/UI contracts, and quickstart guide are present.
 The setup script resolved this feature through `.specify/feature.json`; no extension hooks were
-configured before or after planning. Artifact links, unresolved markers, contract types, and
-the absence of a feature task list are checked before submission.
+configured before or after planning. Artifact links, unresolved markers and contract types were
+checked before planning submission. Task generation subsequently added the linked implementation
+checklist.
 Runtime acceptance remains pending; the documentation PR's existing checks are only baseline
 regression checks.
