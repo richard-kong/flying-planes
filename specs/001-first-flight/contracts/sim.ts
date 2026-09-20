@@ -55,11 +55,18 @@ export interface FlightInput {
   lastInputTime: number;
 }
 export declare function pointerToSteer(
-  clientX: number, clientY: number, width: number, height: number, out: FlightInput,
+  clientX: number, clientY: number, width: number, height: number,
+  out: FlightInput, simTime: number,
 ): void;
-export declare function touchDragToSteer(dx: number, dy: number, out: FlightInput): void;
-export declare function wheelToThrottle(deltaY: number, out: FlightInput): void;
-export declare function pinchToThrottle(scaleDelta: number, out: FlightInput): void;
+export declare function touchDragToSteer(
+  dx: number, dy: number, out: FlightInput, simTime: number,
+): void;
+export declare function wheelToThrottle(
+  deltaY: number, out: FlightInput, simTime: number,
+): void;
+export declare function pinchToThrottle(
+  scaleDelta: number, out: FlightInput, simTime: number,
+): void;
 export declare function inputInactive(out: FlightInput): void; // steer -> 0, active -> false
 
 // flight.ts
@@ -77,7 +84,11 @@ export declare function stepFlight(
 ): void;
 
 // autopilot.ts
-export interface AutopilotState { engaged: boolean; engagedAt: number; phase: number }
+export interface AutopilotState {
+  engaged: boolean;
+  engagedAt: number;
+  lastSeenInputTime: number;
+}
 export declare function stepAutopilot(
   ap: AutopilotState, input: FlightInput, simTime: number, dt: number, steerOut: FlightInput,
 ): void;

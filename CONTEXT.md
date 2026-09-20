@@ -64,3 +64,15 @@ _Avoid_: zone, area, sector
 The fixed-width zone between two adjacent Biome Regions where their parameters blend as a
 function of position across the band axis.
 _Avoid_: boundary, border, blend zone
+
+**Band Weight**:
+The blend factor in [0, 1] produced by `bandWeight(x, seed)`: 0 deep inside an Alpine Biome
+Region, 1 deep inside a Foothills one, 0.5 at each Biome Transition centreline. Drives both
+terrain shaping and the per-vertex shading parameters.
+_Avoid_: mix factor, lerp weight
+
+**Chunk Grid**:
+The live set of Terrain Chunks kept resident around the Plane: a Euclidean disc of chunk
+cells in `VIEW_RINGS` rings, each at a level of detail chosen by its Chebyshev ring.
+`ChunkGrid.update` diffs wanted vs resident into caller-supplied load/free lists.
+_Avoid_: tile cache, streaming map
