@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Vector3 } from "three/src/math/Vector3.js";
 import { createPlaneState, stepFlight, type PlaneState } from "../../src/sim/flight";
 import type { FlightInput } from "../../src/sim/input";
 import { heightAt } from "../../src/sim/terrain";
@@ -56,6 +57,19 @@ describe("stepFlight steering", () => {
     expect(s.pitch).toBeCloseTo(MAX_PITCH, 5);
     run(s, makeInput({ steerY: -1 }), 10);
     expect(s.pitch).toBeCloseTo(-MAX_PITCH, 5);
+  });
+
+  it("orientation nose matches the flight direction for positive and negative pitch", () => {
+    const nose = new Vector3();
+    for (const steerY of [1, -1]) {
+      const s = createPlaneState(SEED);
+      run(s, makeInput({ steerY }), 1);
+      nose.set(0, 0, 1).applyQuaternion(s.orientation).normalize();
+      const cp = Math.cos(s.pitch);
+      expect(nose.x).toBeCloseTo(Math.sin(s.heading) * cp, 5);
+      expect(nose.y).toBeCloseTo(Math.sin(s.pitch), 5);
+      expect(nose.z).toBeCloseTo(Math.cos(s.heading) * cp, 5);
+    }
   });
 
   it("levels out within LEVEL_OUT_TIME at zero steer", () => {

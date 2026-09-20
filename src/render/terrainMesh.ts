@@ -3,7 +3,9 @@
 import { BufferAttribute, BufferGeometry, Vector3 } from "three";
 import {
   CHUNK_SIZE,
+  LOD_MORPH_BAND,
   LOD_RESOLUTIONS,
+  LOD_RINGS,
   POOL_PER_LOD,
   SKIRT_DEPTH,
 } from "../constants";
@@ -54,9 +56,11 @@ function makeGeometry(lod: number): BufferGeometry {
   g.setAttribute("normal", new BufferAttribute(new Float32Array(count * 3), 3));
   // per-vertex biome params so one material can render both biomes (R3):
   //   biomeA = (snowHeight, forestTop, forestBottom, rockSlope)
-  //   biomeB = (fogDensity, unused, unused, unused)
+  //   biomeB = (fogDensity, morphStart, morphEnd, unused) — morph band edges in chunk units
+  //   aMorph = this vertex's height on the next-coarser lod grid (T056 vertex morphing)
   g.setAttribute("biomeA", new BufferAttribute(new Float32Array(count * 4), 4));
   g.setAttribute("biomeB", new BufferAttribute(new Float32Array(count * 4), 4));
+  g.setAttribute("aMorph", new BufferAttribute(new Float32Array(count), 1));
   g.setIndex(buildIndex(res));
   g.userData.lod = lod;
   return g;
@@ -84,6 +88,9 @@ export function createChunkPool(): ChunkPool {
   };
 }
 
+// scratch height grid, sized for the finest lod's (res + 1) interior samples
+const heightsScratch = new Float32Array((LOD_RESOLUTIONS[0] + 1) * (LOD_RESOLUTIONS[0] + 1));
+
 export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number): void {
   const lod = key.lod;
   const res = LOD_RESOLUTIONS[lod];
@@ -96,10 +103,12 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
   const nrm = geometry.getAttribute("normal") as BufferAttribute;
   const bA = geometry.getAttribute("biomeA") as BufferAttribute;
   const bB = geometry.getAttribute("biomeB") as BufferAttribute;
+  const mrp = geometry.getAttribute("aMorph") as BufferAttribute;
   const p = pos.array as Float32Array;
   const n = nrm.array as Float32Array;
   const a = bA.array as Float32Array;
   const b = bB.array as Float32Array;
+  const m = mrp.array as Float32Array;
 
   for (let j = 0; j < side; j++) {
     const edge = j === 0 || j === side - 1;
@@ -111,6 +120,7 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
       const v = j * side + i;
       const isEdge = edge || i === 0 || i === side - 1;
       const h = heightAt(wx, wz, seed);
+      heightsScratch[gj * (res + 1) + gi] = h;
       p[v * 3] = wx - ox;
       p[v * 3 + 1] = h - (isEdge ? SKIRT_DEPTH : 0);
       p[v * 3 + 2] = wz - oz;
@@ -132,8 +142,37 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
       a[v * 4 + 2] = biomeScratch.forestBottom;
       a[v * 4 + 3] = biomeScratch.rockSlope;
       b[v * 4] = biomeScratch.fogDensity;
-      b[v * 4 + 1] = 0;
-      b[v * 4 + 2] = 0;
+    }
+  }
+
+  // morph targets (T056): height of each vertex on the next-coarser lod grid. Even grid
+  // indices coincide with parent samples; odd indices take the bilinear midpoint. The
+  // coarsest lod has no parent — morph height equals the vertex height, so the band is
+  // inert there. Skirt verts keep their drop offset so they never lift out of the ground.
+  const morphEnd = lod < 2 ? LOD_RINGS[lod] + 0.5 : 0.001;
+  const morphStart = lod < 2 ? morphEnd - LOD_MORPH_BAND : 0;
+  const stride = res + 1;
+  for (let j = 0; j < side; j++) {
+    const edge = j === 0 || j === side - 1;
+    const gj = Math.min(Math.max(j - 1, 0), res);
+    for (let i = 0; i < side; i++) {
+      const gi = Math.min(Math.max(i - 1, 0), res);
+      const v = j * side + i;
+      const isEdge = edge || i === 0 || i === side - 1;
+      const x0 = gi - (gi % 2);
+      const z0 = gj - (gj % 2);
+      const x1 = Math.min(x0 + 2, res);
+      const z1 = Math.min(z0 + 2, res);
+      const fx = (gi - x0) * 0.5;
+      const fz = (gj - z0) * 0.5;
+      const h00 = heightsScratch[z0 * stride + x0];
+      const h10 = heightsScratch[z0 * stride + x1];
+      const h01 = heightsScratch[z1 * stride + x0];
+      const h11 = heightsScratch[z1 * stride + x1];
+      const mhi = h00 + (h10 - h00) * fx + (h01 + (h11 - h01) * fx - (h00 + (h10 - h00) * fx)) * fz;
+      m[v] = mhi - (isEdge ? SKIRT_DEPTH : 0);
+      b[v * 4 + 1] = morphStart;
+      b[v * 4 + 2] = morphEnd;
       b[v * 4 + 3] = 0;
     }
   }
@@ -142,6 +181,7 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
   nrm.needsUpdate = true;
   bA.needsUpdate = true;
   bB.needsUpdate = true;
+  mrp.needsUpdate = true;
   geometry.computeBoundingSphere();
 }
 

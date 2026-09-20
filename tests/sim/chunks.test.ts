@@ -90,23 +90,24 @@ describe("ChunkGrid.update", () => {
     const loadSet = new Set(toLoad.map((k) => `${k.cx},${k.cz}`));
     const freeSet = new Set(toFree.map((k) => `${k.cx},${k.cz}`));
 
-    // expected: cells new to the disc, plus cells still in the disc whose LOD changed
+    // expected: toLoad = cells new to the disc plus cells whose LOD changed; toFree = only
+    // cells that left the disc (LOD-changed cells stay resident until their reload lands)
     const expectLoad = new Set<string>();
     const expectFree = new Set<string>();
     for (const [k, lod] of newDisc) {
       if (!oldDisc.has(k) || oldDisc.get(k) !== lod) expectLoad.add(k);
     }
-    for (const [k, lod] of oldDisc) {
-      if (!newDisc.has(k) || newDisc.get(k) !== lod) expectFree.add(k);
+    for (const [k] of oldDisc) {
+      if (!newDisc.has(k)) expectFree.add(k);
     }
 
     expect(loadSet).toEqual(expectLoad);
     expect(freeSet).toEqual(expectFree);
-    expect(toLoad.length).toBe(toFree.length); // equal sizes, both disc edges + LOD re-fills
+    expect(toLoad.length).toBeGreaterThan(toFree.length); // loads include LOD re-fills
     expect(toLoad.length).toBeGreaterThan(0);
   });
 
-  it("re-fills chunks whose Chebyshev ring crosses an LOD boundary", () => {
+  it("re-fills chunks whose Chebyshev ring crosses an LOD boundary, without freeing them", () => {
     const grid = createChunkGrid(VIEW_RINGS);
     const toLoad: ChunkKey[] = [];
     const toFree: ChunkKey[] = [];
@@ -117,8 +118,66 @@ describe("ChunkGrid.update", () => {
 
     const freed = toFree.find((k) => k.cx === 7 && k.cz === 0);
     const loading = toLoad.find((k) => k.cx === 7 && k.cz === 0);
-    expect(freed?.lod).toBe(1);
+    expect(freed).toBeUndefined(); // stays resident until the lod 0 fill lands (T055)
     expect(loading?.lod).toBe(0);
+    // residents kept = old disc cells still inside the new disc (lod changes included)
+    const newDisc = discAt(9, 0);
+    let kept = 0;
+    for (const key of discAt(10, 0).keys()) if (newDisc.has(key)) kept++;
+    expect(grid.residentCount).toBe(kept);
+  });
+
+  it("budget-limited streaming never leaves a wanted chunk uncovered", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    const BUDGET = 2;
+
+    // resident maps key -> filled lod; pending tracks emitted-but-unfilled entries
+    const resident = new Map<string, number>();
+    const pending = new Set<string>();
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) {
+      grid.markResident(k);
+      resident.set(`${k.cx},${k.cz}`, k.lod);
+    }
+
+    // fly 30 chunk-lengths, crossing both LOD boundaries repeatedly
+    for (let stepN = 1; stepN <= 30; stepN++) {
+      pending.clear();
+      grid.update(stepN * CHUNK_SIZE, 0, toLoad, toFree);
+      for (const k of toLoad) pending.add(`${k.cx},${k.cz}`);
+      // every wanted cell is either resident (possibly at a stale lod, still rendered)
+      // or queued for load in this frame — coverage never regresses
+      const wanted = discAt(stepN, 0);
+      for (const key of wanted.keys()) {
+        expect(
+          resident.has(key) || pending.has(key),
+          `chunk ${key} uncovered at step ${stepN}`,
+        ).toBe(true);
+      }
+      // process only BUDGET fills per frame, like main.ts does
+      for (let i = 0; i < toLoad.length && i < BUDGET; i++) {
+        const k = toLoad[i];
+        grid.markResident(k);
+        resident.set(`${k.cx},${k.cz}`, k.lod);
+      }
+      for (const k of toFree) resident.delete(`${k.cx},${k.cz}`);
+    }
+
+    // after enough frames everything converges to the wanted set at the right lod
+    for (let i = 0; i < 800; i++) {
+      grid.update(30 * CHUNK_SIZE, 0, toLoad, toFree);
+      for (let j = 0; j < toLoad.length && j < BUDGET; j++) {
+        grid.markResident(toLoad[j]);
+        resident.set(`${toLoad[j].cx},${toLoad[j].cz}`, toLoad[j].lod);
+      }
+      for (const k of toFree) resident.delete(`${k.cx},${k.cz}`);
+      if (toLoad.length === 0) break;
+    }
+    const wanted = discAt(30, 0);
+    expect(resident.size).toBe(wanted.size);
+    for (const [key, lod] of wanted) expect(resident.get(key)).toBe(lod);
   });
 
   it("reuses caller-supplied lists (reset length, no new arrays)", () => {

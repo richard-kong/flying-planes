@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepAutopilot, createAutopilotState } from "../../src/sim/autopilot";
+import { wheelToThrottle } from "../../src/sim/input";
 import { createPlaneState, stepFlight } from "../../src/sim/flight";
 import { heightAt } from "../../src/sim/terrain";
 import type { FlightInput } from "../../src/sim/input";
@@ -91,6 +92,20 @@ describe("stepAutopilot", () => {
     expect(ap.engaged).toBe(true);
     input.lastInputTime = IDLE_TO_AUTOPILOT + 1.5;
     stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 1.5, SIM_DT, out);
+    expect(ap.engaged).toBe(false);
+  });
+
+  it("input at a clamped limit still disengages (wheel at max throttle)", () => {
+    const ap = createAutopilotState();
+    const input = makeInput({ lastInputTime: 0, throttle: 1 });
+    const out = makeSteerOut();
+    stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 1, SIM_DT, out);
+    expect(ap.engaged).toBe(true);
+    // scrolling further at maximum throttle: throttle cannot change but the event
+    // is fresh activity and must disengage on the same step (T058, SC-008)
+    const t = IDLE_TO_AUTOPILOT + 1.5;
+    wheelToThrottle(-120, input, t);
+    stepAutopilot(ap, input, t, SIM_DT, out);
     expect(ap.engaged).toBe(false);
   });
 
