@@ -27,6 +27,33 @@ rendered from actual Theme terrain and allowed Cancel to briefly restore a relea
   at a fixed Seed, generated during the page visit rather than shipped as image assets.
 - Q: How will reference-device performance be verified? → A: Automated functional and rendering
   checks plus a benchmark guide for the owner to run on their laptop and phone before release.
+- Q: Which Nature and Arctic prototypes should guide the final visuals? → A: N4 Limestone
+  Lakes (N1 + N3) and A4 Blue Glacier Basin (A1 + A2). After reviewing their flight and overview
+  captures, the owner confirmed: "Both look right."
+
+## Approved visual references
+
+The approved directions are recorded in [prototype PR #16](https://github.com/richard-kong/flying-planes/pull/16).
+The [study source at revision 0085548](https://github.com/richard-kong/flying-planes/blob/008554850523851e92f021a226901bf03352d25b/src/render/landscape-prototype.ts)
+preserves both blends and the original directions. The captures use Seed 42 and matched
+flight and overview viewpoints.
+
+| Theme | Approved prototype and visual cues | Reference views |
+|-------|------------------------------------|-----------------|
+| Nature | **N4 Limestone Lakes**, blending N1's green foothills and turquoise lakes with N3's pale limestone faces and alpine meadows. | [Flight][n4-flight] · [Overview][n4-overview] |
+| Arctic | **A4 Blue Glacier Basin**, blending A1's broad glacial valleys with A2's sculpted snowy ridges and stronger blue ice. | [Flight][a4-flight] · [Overview][a4-overview] |
+
+[n4-flight]: https://app.devin.ai/attachments/1224253f-ac37-4194-8270-65a7b62fdec9/N4-flight.png
+[n4-overview]: https://app.devin.ai/attachments/325b77b1-6b53-4049-8926-e55c5e877a78/N4-overview.png
+[a4-flight]: https://app.devin.ai/attachments/9ccc9711-6486-415f-984d-3b58e1d9a875/A4-flight.png
+[a4-overview]: https://app.devin.ai/attachments/1b745b32-76e6-4bc9-9178-7be8a903df82/A4-overview.png
+
+These references establish the landform character, colour relationships, surface treatment,
+sky, and lighting for visual acceptance. Exact reproduction of the finite study's terrain is
+not required; the production worlds must still meet the endless, deterministic, regional,
+preview, and performance requirements below. Captures are review references, not shipped
+preview assets. N4 and A4 are study identifiers; the Theme names remain Nature and Arctic.
+Alien Planet retains the existing First Flight appearance under FR-008.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -74,15 +101,16 @@ mountain region, a valley, and a lake or frozen lake. Fly through regional trans
 **Acceptance Scenarios**:
 
 1. **Given** Nature, **When** the visitor flies through mountains and valleys, **Then** they see
-   green foothills and forest bands, natural-coloured rock, snow-capped mountains, blue lakes,
-   and a clear daylight sky. Terrain shapes are less exaggerated than Alien Planet, rather
-   than merely recoloured copies.
+   green foothills, forest bands and alpine meadows, pale limestone faces, snow-capped mountains,
+   turquoise lakes, and a clear daylight sky consistent with the approved N4 reference.
+   Terrain shapes are less exaggerated than Alien Planet, rather than merely recoloured copies.
 2. **Given** Alien Planet, **When** the visitor uses a Seed from First Flight, **Then** the
    familiar Alpine/Foothills landscape, cool dusky terrain, warm gold lakes, Pastel Dawn sky,
    and lavender fog retain their existing visual identity.
 3. **Given** Arctic, **When** the visitor flies across the world, **Then** broad glacial valleys,
-   snowy ridges, blue ice, and flat frozen lakes appear under cold daylight. Its landforms and
-   ground cover distinguish it from both Nature and Alien Planet.
+   sculpted snowy ridges, blue ice, and flat frozen lakes appear under cold daylight consistent
+   with the approved A4 reference. Its landforms and ground cover distinguish it from both
+   Nature and Alien Planet.
 4. **Given** the same Theme and Seed, **When** the visitor restarts or reloads and selects that
    Theme again, **Then** terrain shapes and lake or frozen-lake locations repeat.
 5. **Given** any Theme, **When** the visitor flies across regional boundaries or toward the
@@ -169,15 +197,18 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
   appearance, sky, fog, and fixed lighting together. There MUST be no independent time-of-day
   selection in this release.
 - **FR-007**: Nature MUST use Earth-like landforms and colours: green foothills and forest
-  bands, natural rock and white snow, blue lakes, and a clear daylight sky. At the same Seed
-  and viewpoints, its terrain shapes MUST differ from Alien Planet with gentler relief.
+  bands, alpine meadows, pale limestone faces and white snow, turquoise lakes, and a clear
+  daylight sky, following the [approved N4 visual reference](#approved-visual-references).
+  At the same Seed and viewpoints, its terrain shapes MUST differ from Alien Planet with
+  gentler relief.
 - **FR-008**: Alien Planet MUST preserve First Flight's intended terrain and Pastel Dawn
   appearance, including its Alpine/Foothills variation, cool dusky palette, warm gold lakes,
   low pale-gold sun, and lavender fog. Renaming the existing experience MUST NOT introduce
   additional alien objects, spires, craters, or a different sky. Known defects may still be fixed.
-- **FR-009**: Arctic MUST have broad glacial valleys, snowy ridges, blue ice, flat frozen lake
-  surfaces, and cold daylight. Snow and ice MUST replace the temperate forest/vegetation look;
-  its valley and ridge shapes MUST differ from the other Themes.
+- **FR-009**: Arctic MUST have broad glacial valleys, sculpted snowy ridges, blue ice, flat
+  frozen lake surfaces, and cold daylight, following the
+  [approved A4 visual reference](#approved-visual-references). Snow and ice MUST replace the
+  temperate forest/vegetation look; its valley and ridge shapes MUST differ from the other Themes.
 - **FR-010**: All Themes MUST remain procedural, endless, and deterministic. The same Theme
   and Seed MUST reproduce terrain, regional layout, and water or ice locations. Regional
   transitions MUST remain gradual and free of visible gaps or seams.
@@ -259,7 +290,10 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
   appears within two seconds of Fly on the reference devices.
 - **SC-003**: Across all three Themes at the same Seed and reference viewpoints, visual review
   confirms every cue in FR-007 through FR-009, distinct terrain shapes, and previews consistent
-  with their worlds. Alien Planet retains the First Flight reference appearance.
+  with their worlds. Nature and Arctic review MUST include Seed 42 flight and overview views
+  compared with the [approved N4 and A4 references](#approved-visual-references) for landform
+  character, colour relationships, surfaces, sky, and lighting. Alien Planet retains the
+  First Flight reference appearance.
 - **SC-004**: In every directed Theme change and same-Theme restart on desktop and touch,
   Fly launches the selected world from its starting state. Cancel, including after 60 seconds
   paused or a hidden tab, preserves the prior flight without movement during the pause,
