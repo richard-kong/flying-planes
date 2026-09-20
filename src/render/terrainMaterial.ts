@@ -88,7 +88,7 @@ void main() {
   float rayY = abs(ray.y) < 0.00001 ? (ray.y < 0.0 ? -0.00001 : 0.00001) : ray.y;
   waterPos = uCamPos + ray * ((uWaterLevel - uCamPos.y) / rayY);
   vec4 waterClip = projectionMatrix * viewMatrix * vec4(waterPos, 1.0);
-  if (wWater > 0.5) gl_FragDepth = 0.5 * waterClip.z / waterClip.w + 0.5;
+  gl_FragDepth = wWater > 0.5 ? 0.5 * waterClip.z / waterClip.w + 0.5 : gl_FragCoord.z;
   vec3 surfacePos = wWater > 0.5 ? waterPos : vWorldPos;
   vec3 n = wWater > 0.5 ? vec3(0.0, 1.0, 0.0) : normalize(vNormal);
   float h = surfacePos.y;
