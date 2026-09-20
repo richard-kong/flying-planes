@@ -1,4 +1,4 @@
-// Throwaway visual study: three Nature and three Arctic directions, ?variant=N1…A3.
+// Throwaway visual study: Nature N1–N4 and Arctic A1–A4, selected with ?variant=.
 import {
   Color, DoubleSide, Matrix4, Mesh, NoToneMapping, PerspectiveCamera,
   PlaneGeometry, Scene, ShaderMaterial, Uniform, Vector3, WebGLRenderer,
@@ -50,6 +50,13 @@ const directions: Direction[] = [
     fog: 0.0001, sun: [-0.7, 0.7, 0.4],
   },
   {
+    id: "N4", name: "Limestone Lakes", description: "N1 + N3 · green foothills · pale limestone · turquoise lakes",
+    arctic: false, amplitude: 1510, frequency: 0.00074, ridge: 0.4, valley: 840, flatness: 1.45,
+    snow: 840, rock: 440, greens: [0x74894f, 0x295340], stone: 0xc5beb0,
+    snowColor: 0xf3f4ec, water: [0x67b3b6, 0x267f99], sky: [0x78b5dc, 0xdfece9],
+    fog: 0.00011, sun: [-0.65, 0.75, 0.32],
+  },
+  {
     id: "A1", name: "Glacier Basin", description: "Broad glacial valleys · blue shadows · milky frozen lakes",
     arctic: true, amplitude: 1380, frequency: 0.00065, ridge: 0.2, valley: 1050, flatness: 2.4,
     snow: 140, rock: 680, greens: [0xd8e7ec, 0xb9d7e3], stone: 0x718693,
@@ -69,6 +76,13 @@ const directions: Direction[] = [
     snow: 240, rock: 440, greens: [0xd8e0e2, 0xc2d3dc], stone: 0x74828b,
     snowColor: 0xf1f2ed, water: [0xd5e8e8, 0xa6c8d3], sky: [0xa6bdcd, 0xe7edeb],
     fog: 0.00015, sun: [-0.6, 0.65, 0.5],
+  },
+  {
+    id: "A4", name: "Blue Glacier Basin", description: "A1 + A2 · broad glacial valleys · sculpted snow ridges · blue ice",
+    arctic: true, amplitude: 1580, frequency: 0.0008, ridge: 0.55, valley: 1050, flatness: 2.4,
+    snow: 150, rock: 610, greens: [0xc8dfe9, 0xabcddd], stone: 0x62798b,
+    snowColor: 0xf2f7fa, water: [0xa4dce7, 0x539fbc], sky: [0x82acd2, 0xd9e9ef],
+    fog: 0.00012, sun: [-0.7, 0.5, 0.275],
   },
 ];
 
