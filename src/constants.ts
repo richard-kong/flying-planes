@@ -13,6 +13,9 @@ export const LOD_RINGS: readonly number[] = [2, 7, 16];
 export const LOD_RESOLUTIONS: readonly number[] = [64, 32, 16];
 export const CHUNKS_PER_FRAME = 2;
 export const POOL_PER_LOD: readonly number[] = [32, 240, 680];
+// chunk units: how far inside a lod band's outer edge vertices morph toward the
+// next-coarser sampling (hides the lod swap, T056)
+export const LOD_MORPH_BAND = 1.5;
 export const SKIRT_DEPTH = 30;
 export const SPECKLE_SIZE = 24;
 export const WATER_LEVEL = 120;

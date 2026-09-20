@@ -99,6 +99,8 @@ export function stepFlight(
   state.position.y = ny;
   state.position.z = nz;
 
-  eulerScratch.set(state.pitch, state.heading, -state.roll, "YXZ");
+  // nose (+z) must follow the integrated flight direction: positive pitch is up, which is
+  // a negative rotation about +x
+  eulerScratch.set(-state.pitch, state.heading, -state.roll, "YXZ");
   state.orientation.setFromEuler(eulerScratch);
 }

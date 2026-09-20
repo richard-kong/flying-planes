@@ -30,8 +30,8 @@ CI (`.github/workflows/ci.yml`) runs the four commands above on every PR.
 | # | Scenario | How to check | Expected |
 |---|----------|--------------|----------|
 | 1 | Airborne on load (US1-1, FR-001) | Load page, touch nothing | Plane moving over terrain within 2 s; hint line visible then fades on first pointer move |
-| 2 | Hover to steer (US1-2..4) | Move pointer to right edge, then centre, then bottom | Banks right and turns; levels within 2 s of centring; noses down |
-| 3 | Soft floor (US1-5, SC-007) | Hold pointer at bottom edge 30 s | Plane eases up, never intersects terrain or lakes |
+| 2 | Hover to steer (US1-2..4) | Move pointer to right edge, then centre, then top | Banks right and turns; levels within 2 s of centring; screen-top means nose down |
+| 3 | Soft floor (US1-5, SC-007) | Hold pointer at top edge (nose down) 30 s | Plane eases up, never intersects terrain or lakes |
 | 4 | Throttle (FR-011) | Wheel up/down; pinch on phone | Speed changes within min/max, never stops |
 | 5 | Endless bands (US2-2) | Fly perpendicular to the bands for 3 min | Alpine → Foothills → Alpine, ~60 s each, ~10 s gradual blend |
 | 6 | Look (US2-4, US2-5) | Fly in each Biome, turn toward and away from the sun | Pastel sky, lavender fog, pink snow / violet rock / blue-green forest, gold lakes with highlight facing the sun; no cast shadows |

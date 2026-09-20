@@ -45,14 +45,28 @@ describe("pointerToSteer", () => {
     expect(out.steerY).toBe(-1);
   });
 
-  it("updates lastInputTime only when steer changes", () => {
+  it("every event is fresh activity, even at a clamped value", () => {
     const out = makeInput();
     pointerToSteer(600, 300, 800, 600, out, 5);
     expect(out.lastInputTime).toBe(5);
-    pointerToSteer(600, 300, 800, 600, out, 7);
-    expect(out.lastInputTime).toBe(7 - 2); // unchanged: same steer
-    pointerToSteer(650, 300, 800, 600, out, 9);
+    // held at a clamped position: a further event still counts as activity (T058)
+    pointerToSteer(2000, 300, 800, 600, out, 7);
+    expect(out.lastInputTime).toBe(7);
+    pointerToSteer(4000, 300, 800, 600, out, 9);
+    expect(out.steerX).toBe(1); // still clamped
     expect(out.lastInputTime).toBe(9);
+  });
+
+  it("recordActivity=false recomputes steer without bumping lastInputTime", () => {
+    const out = makeInput();
+    pointerToSteer(600, 300, 800, 600, out, 5);
+    expect(out.steerX).toBe(0.5);
+    // same pointer position, wider viewport (resize recompute): value recentres,
+    // but no fresh activity is recorded (T063)
+    pointerToSteer(600, 300, 1200, 600, out, 9, false);
+    expect(out.steerX).toBe(0);
+    expect(out.lastInputTime).toBe(5);
+    expect(out.active).toBe(true);
   });
 });
 
@@ -68,6 +82,16 @@ describe("touchDragToSteer", () => {
     expect(out.steerX).toBeCloseTo(-0.25, 9);
     expect(out.steerY).toBeCloseTo(0.5, 9);
     expect(out.active).toBe(true);
+  });
+
+  it("a zero-delta touch is still fresh activity (touch-down / drag-origin reset)", () => {
+    const out = makeInput();
+    out.steerX = 0.6;
+    touchDragToSteer(0, 0, out, 12);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(true);
+    expect(out.lastInputTime).toBe(12);
   });
 });
 
@@ -90,13 +114,14 @@ describe("wheelToThrottle", () => {
     expect(out.throttle).toBe(0);
   });
 
-  it("updates lastInputTime only when throttle changes", () => {
+  it("scrolling at the limit is still fresh activity", () => {
     const out = makeInput();
     wheelToThrottle(-120, out, 4);
     expect(out.lastInputTime).toBe(4);
     out.throttle = 1;
-    wheelToThrottle(-120, out, 6); // clamped: no change
-    expect(out.lastInputTime).toBe(4);
+    wheelToThrottle(-120, out, 6); // clamped: value cannot change but the event counts
+    expect(out.throttle).toBe(1);
+    expect(out.lastInputTime).toBe(6);
   });
 });
 

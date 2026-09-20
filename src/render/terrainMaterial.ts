@@ -1,9 +1,13 @@
-// One ShaderMaterial for terrain and lakes (R3). Vertex stage flattens below-water vertices
-// to the water level and flags them; fragment stage does the altitude/slope palette, forest
-// speckle, warm/cool sun shading, gold lakes with a Blinn specular, and lavender fog that
-// resolves to the shared skyGradient at the horizon (FR-022b/c/d/e/g).
-import { Color, ShaderMaterial, Uniform, Vector3 } from "three";
+// One ShaderMaterial for terrain and lakes (R3). Vertex stage morphs each vertex toward its
+// next-coarser lod height near the outer edge of its lod band (T056). Terrain vertices remain
+// on the terrain surface; water is projected onto the fixed lake plane per fragment by
+// writing the plane's window-space depth for submerged fragments (T057). Fragment stage does
+// the altitude/slope palette, forest speckle, warm/cool sun shading, gold lakes with a
+// Blinn specular, and lavender fog that resolves to the shared skyGradient at the horizon
+// (FR-022b/c/d/e/g).
+import { Color, Matrix4, ShaderMaterial, Uniform, Vector2, Vector3 } from "three";
 import {
+  CHUNK_SIZE,
   COLOR_FOG_FAR,
   COLOR_FOG_NEAR,
   COLOR_FOREST,
@@ -22,23 +26,31 @@ import { SKY_GRADIENT_GLSL } from "./sky";
 const VERTEX = `
 attribute vec4 biomeA;
 attribute vec4 biomeB;
+attribute float aMorph;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying float vTerrainY;
-varying float vIsWater;
 varying vec4 vBiomeA;
 varying vec4 vBiomeB;
 
 uniform float uWaterLevel;
+uniform float uChunkSize;
+uniform vec2 uPlanePos;
 
 void main() {
   vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
-  vTerrainY = wp.y;
-  vIsWater = step(wp.y, uWaterLevel);
-  if (vIsWater > 0.5) wp.y = uWaterLevel;
+  // lod morph (T056): as the chunk's Chebyshev distance from the plane nears the outer
+  // edge of its lod band, pull vertices toward their next-coarser-grid height so the
+  // lod swap is continuous. biomeB.y/z carry the band edges in chunk units.
+  vec2 centre = modelMatrix[3].xz / uChunkSize + 0.5;
+  vec2 planeC = uPlanePos / uChunkSize;
+  float cheb = max(abs(centre.x - planeC.x), abs(centre.y - planeC.y));
+  float y = mix(wp.y, aMorph, smoothstep(biomeB.y, biomeB.z, cheb));
+  vTerrainY = y;
+  wp.y = y;
   vWorldPos = wp;
   vec3 n = normalize(mat3(modelMatrix) * normal);
-  vNormal = mix(n, vec3(0.0, 1.0, 0.0), vIsWater);
+  vNormal = n;
   vBiomeA = biomeA;
   vBiomeB = biomeB;
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
@@ -50,6 +62,7 @@ ${SKY_GRADIENT_GLSL}
 uniform float uWaterLevel;
 uniform float uSpeckleSize;
 uniform vec3 uCamPos;
+uniform mat4 uViewProj; // projection * viewInverse, refreshed per frame
 uniform vec3 uSnow;
 uniform vec3 uRock;
 uniform vec3 uForest;
@@ -64,13 +77,22 @@ uniform vec3 uSunHalo;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying float vTerrainY;
-varying float vIsWater;
 varying vec4 vBiomeA;
 varying vec4 vBiomeB;
 
 void main() {
-  vec3 n = normalize(vNormal);
-  float h = vWorldPos.y;
+  // Classify on interpolated terrain height, then intersect the view ray with the fixed
+  // water plane. Writing that point's depth keeps mixed-triangle water truly horizontal.
+  float wWater = step(vTerrainY, uWaterLevel);
+  vec3 waterPos = vWorldPos;
+  vec3 ray = vWorldPos - uCamPos;
+  float rayY = abs(ray.y) < 0.00001 ? (ray.y < 0.0 ? -0.00001 : 0.00001) : ray.y;
+  waterPos = uCamPos + ray * ((uWaterLevel - uCamPos.y) / rayY);
+  vec4 waterClip = uViewProj * vec4(waterPos, 1.0);
+  gl_FragDepth = wWater > 0.5 ? 0.5 * waterClip.z / waterClip.w + 0.5 : gl_FragCoord.z;
+  vec3 surfacePos = wWater > 0.5 ? waterPos : vWorldPos;
+  vec3 n = wWater > 0.5 ? vec3(0.0, 1.0, 0.0) : normalize(vNormal);
+  float h = surfacePos.y;
   float snowH = vBiomeA.x;
   float forestTop = vBiomeA.y;
   float forestBottom = vBiomeA.z;
@@ -97,7 +119,7 @@ void main() {
   col = mix(uShoreline, col, smoothstep(uWaterLevel, uWaterLevel + 8.0, h));
 
   // lakes: flat gold, soft rim, sun-dominated (FR-022c)
-  if (vIsWater > 0.5) {
+  if (wWater > 0.5) {
     float depth = uWaterLevel - vTerrainY;
     vec3 lake = mix(uLakeNear, uLakeDeep, smoothstep(0.0, 8.0, depth));
     col = mix(uShoreline, lake, smoothstep(0.0, 2.0, depth));
@@ -109,14 +131,14 @@ void main() {
   lit *= mix(vec3(0.92, 0.95, 1.08), vec3(1.06, 1.0, 0.94), 0.5 + 0.5 * dl);
 
   // Blinn specular toward the sun on lakes
-  if (vIsWater > 0.5) {
-    vec3 vdir = normalize(uCamPos - vWorldPos);
+  if (wWater > 0.5) {
+    vec3 vdir = normalize(uCamPos - surfacePos);
     vec3 hv = normalize(vdir + SUN_DIR);
     lit += uSunHalo * pow(max(dot(vec3(0.0, 1.0, 0.0), hv), 0.0), 48.0) * 0.6;
   }
 
   // lavender exponential fog, denser in valleys, resolves to the sky gradient (FR-022g)
-  vec3 toFrag = vWorldPos - uCamPos;
+  vec3 toFrag = surfacePos - uCamPos;
   float dist = length(toFrag);
   float sigma = fogDensity * (0.00055 + 0.0011 * exp(-max(h - uWaterLevel, 0.0) / 150.0));
   float f = 1.0 - exp(-dist * dist * sigma * sigma);
@@ -133,7 +155,10 @@ export function createTerrainMaterial(): ShaderMaterial {
     uniforms: {
       uWaterLevel: new Uniform(WATER_LEVEL),
       uSpeckleSize: new Uniform(SPECKLE_SIZE),
+      uChunkSize: new Uniform(CHUNK_SIZE),
+      uPlanePos: new Uniform(new Vector2()),
       uCamPos: new Uniform(new Vector3()),
+      uViewProj: new Uniform(new Matrix4()),
       uSnow: new Uniform(new Color(COLOR_SNOW)),
       uRock: new Uniform(new Color(COLOR_ROCK)),
       uForest: new Uniform(new Color(COLOR_FOREST)),

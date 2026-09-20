@@ -1,5 +1,8 @@
 // The only producer of Steer Vector / Throttle (constitution V). Every function writes into
-// the caller's FlightInput; lastInputTime is bumped only when a value actually changes.
+// the caller's FlightInput; lastInputTime records the latest genuine input event — a call
+// made for a real device event bumps it even when the clamped value does not change
+// (input at a limit is still activity, FR-027/T058). Callers recomputing a value without a
+// user event (e.g. viewport resize) pass recordActivity = false.
 import { THROTTLE_STEP, TOUCH_FULL_DEFLECTION_PX } from "../constants";
 
 export interface FlightInput {
@@ -25,14 +28,13 @@ export function pointerToSteer(
   height: number,
   out: FlightInput,
   simTime: number,
+  recordActivity = true,
 ): void {
   const x = clampSteer((clientX - width / 2) / (width / 2));
   const y = clampSteer((clientY - height / 2) / (height / 2));
-  if (x !== out.steerX || y !== out.steerY || !out.active) {
-    if (x !== out.steerX || y !== out.steerY) out.lastInputTime = simTime;
-    out.steerX = x;
-    out.steerY = y;
-  }
+  if (recordActivity) out.lastInputTime = simTime;
+  out.steerX = x;
+  out.steerY = y;
   out.active = true;
 }
 
@@ -44,7 +46,7 @@ export function touchDragToSteer(
 ): void {
   const x = clampSteer(dx / TOUCH_FULL_DEFLECTION_PX);
   const y = clampSteer(dy / TOUCH_FULL_DEFLECTION_PX);
-  if (x !== out.steerX || y !== out.steerY) out.lastInputTime = simTime;
+  out.lastInputTime = simTime;
   out.steerX = x;
   out.steerY = y;
   out.active = true;
@@ -52,18 +54,14 @@ export function touchDragToSteer(
 
 export function wheelToThrottle(deltaY: number, out: FlightInput, simTime: number): void {
   const next = clamp01(out.throttle + (deltaY < 0 ? THROTTLE_STEP : -THROTTLE_STEP));
-  if (next !== out.throttle) {
-    out.throttle = next;
-    out.lastInputTime = simTime;
-  }
+  out.throttle = next;
+  out.lastInputTime = simTime;
 }
 
 export function pinchToThrottle(scaleDelta: number, out: FlightInput, simTime: number): void {
   const next = clamp01(out.throttle + (scaleDelta - 1) * 0.5);
-  if (next !== out.throttle) {
-    out.throttle = next;
-    out.lastInputTime = simTime;
-  }
+  out.throttle = next;
+  out.lastInputTime = simTime;
 }
 
 export function inputInactive(out: FlightInput): void {

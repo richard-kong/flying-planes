@@ -21,9 +21,10 @@ is covered by one smoke test.
 **Language/Version**: TypeScript 5.x, `strict: true`, ES2022 target
 **Primary Dependencies**: `three` (only runtime dependency); dev: `vite`, `vitest`, `typescript`
 **Storage**: N/A (Seed from `?seed=` URL query; nothing persisted)
-**Testing**: Vitest in Node for `src/sim/**`; one render smoke test that builds the full scene
-graph (materials, geometry pool, sky, plane) without a `WebGLRenderer` and asserts nothing throws
-(see research R11)
+**Testing**: Vitest in Node for `src/sim/**`; a scene-graph smoke test that builds the full
+scene (materials, geometry pool, sky, plane) without a `WebGLRenderer` (research R11), plus a
+rendered smoke test that draws one real WebGL2 frame in headless Chrome via `puppeteer`
+(dev-only harness) and fails on shader/render errors
 **Target Platform**: evergreen desktop and mobile browsers with WebGL2; static file host
 **Project Type**: single-page web app (single Vite project)
 **Performance Goals**: 60 fps laptop iGPU, 30 fps mid-range phone; first frame <= 2 s on 4G

@@ -54,9 +54,12 @@ export interface FlightInput {
   active: boolean;
   lastInputTime: number;
 }
+// Every steer/throttle call made for a genuine device event bumps lastInputTime even when
+// the clamped value does not change; pass recordActivity = false when recomputing a value
+// without a user event (e.g. viewport resize).
 export declare function pointerToSteer(
   clientX: number, clientY: number, width: number, height: number,
-  out: FlightInput, simTime: number,
+  out: FlightInput, simTime: number, recordActivity?: boolean,
 ): void;
 export declare function touchDragToSteer(
   dx: number, dy: number, out: FlightInput, simTime: number,
