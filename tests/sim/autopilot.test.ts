@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { stepAutopilot, createAutopilotState } from "../../src/sim/autopilot";
 import { wheelToThrottle } from "../../src/sim/input";
 import { createPlaneState, stepFlight } from "../../src/sim/flight";
-import { heightAt } from "../../src/sim/terrain";
+import { surfaceHeightAt } from "../../src/sim/terrain";
+import { worldAlien } from "./theme-test-helpers";
 import type { FlightInput } from "../../src/sim/input";
 import {
   AUTOPILOT_BANK_AMPL,
@@ -19,11 +20,11 @@ import {
 const SEED = 42;
 
 function makeInput(over: Partial<FlightInput> = {}): FlightInput {
-  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100, ...over };
+  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100, gateArmed: true, ...over };
 }
 
 function makeSteerOut(): FlightInput {
-  return { steerX: 1, steerY: 1, throttle: 0, active: false, lastInputTime: 0 };
+  return { steerX: 1, steerY: 1, throttle: 0, active: false, lastInputTime: 0, gateArmed: true };
 }
 
 describe("stepAutopilot", () => {
@@ -113,15 +114,46 @@ describe("stepAutopilot", () => {
     const ap = createAutopilotState();
     const input = makeInput({ lastInputTime: 0 });
     const out = makeSteerOut();
-    const s = createPlaneState(SEED);
+    const s = createPlaneState(worldAlien(SEED));
     for (let i = 0; i < 60 / SIM_DT; i++) {
       const t = i * SIM_DT;
       stepAutopilot(ap, input, t, SIM_DT, out);
-      stepFlight(s, ap.engaged ? out : input, SIM_DT, SEED);
+      stepFlight(s, ap.engaged ? out : input, SIM_DT, worldAlien(SEED));
       expect(s.speed).toBeGreaterThanOrEqual(MIN_SPEED - 1e-9);
       expect(s.speed).toBeLessThanOrEqual(MAX_SPEED + 1e-9);
-      const floor = heightAt(s.position.x, s.position.z, SEED) + MIN_ALTITUDE_ABOVE_TERRAIN;
+      const floor = surfaceHeightAt(s.position.x, s.position.z, worldAlien(SEED)) + MIN_ALTITUDE_ABOVE_TERRAIN;
       expect(s.position.y).toBeGreaterThanOrEqual(floor - 1e-6);
     }
+  });
+});
+
+// --- 002 T010: autopilot across chooser/pause boundaries ---
+import { disarmInputGate } from "../../src/sim/input";
+
+describe("autopilot across input-gate boundaries", () => {
+  it("disarming preserves lastInputTime, so sim-time pause never re-engages spuriously", () => {
+    const input = makeInput({ lastInputTime: 100, throttle: 0.8, steerX: 0.5 });
+    disarmInputGate(input);
+    // autopilot must see the same idle window after resume (simTime is paused by caller)
+    const ap = createAutopilotState();
+    const out = makeSteerOut();
+    stepAutopilot(ap, input, 100 + IDLE_TO_AUTOPILOT - 1, SIM_DT, out);
+    expect(ap.engaged).toBe(false);
+    // and a non-default throttle survives a Fly/Cancel boundary untouched
+    expect(input.throttle).toBe(0.8);
+  });
+
+  it("a boundary while engaged disengages exactly as before (fresh event resumes manual)", () => {
+    const ap = createAutopilotState();
+    const input = makeInput({ lastInputTime: 0 });
+    const out = makeSteerOut();
+    stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 1, SIM_DT, out);
+    expect(ap.engaged).toBe(true);
+    // simulate: pause boundary disarms, then a fresh input event arrives post-resume
+    disarmInputGate(input);
+    const t = IDLE_TO_AUTOPILOT + 2;
+    input.lastInputTime = t;
+    stepAutopilot(ap, input, t, SIM_DT, out);
+    expect(ap.engaged).toBe(false);
   });
 });

@@ -10,7 +10,7 @@ import {
 import { THROTTLE_STEP, TOUCH_FULL_DEFLECTION_PX } from "../../src/constants";
 
 function makeInput(): FlightInput {
-  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100 };
+  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100, gateArmed: true };
 }
 
 describe("pointerToSteer", () => {
@@ -153,5 +153,80 @@ describe("inputInactive", () => {
     expect(out.steerX).toBe(0);
     expect(out.steerY).toBe(0);
     expect(out.active).toBe(false);
+  });
+});
+
+// --- 002 T010: fresh-input gate (chooser/pause boundaries) ---
+import {
+  armInputGate,
+  disarmInputGate,
+  inputGateArmed,
+  passInputGate,
+  releaseInputGate,
+} from "../../src/sim/input";
+
+describe("input gate", () => {
+  it("disarm neutralises steering but preserves throttle and idle history", () => {
+    const out = makeInput();
+    out.steerX = 0.7;
+    out.steerY = -0.3;
+    out.throttle = 0.9;
+    out.active = true;
+    out.lastInputTime = 55;
+    disarmInputGate(out);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+    expect(out.throttle).toBe(0.9);
+    expect(out.lastInputTime).toBe(55);
+    expect(inputGateArmed(out)).toBe(false);
+  });
+
+  it("the first discrete event while disarmed is dropped but arms the gate", () => {
+    const out = makeInput();
+    disarmInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(false);
+    expect(inputGateArmed(out)).toBe(true);
+    // the next event applies normally
+    expect(passInputGate(out, "discrete")).toBe(true);
+  });
+
+  it("held continuations while disarmed are dropped without arming", () => {
+    const out = makeInput();
+    disarmInputGate(out);
+    for (const t of [10, 11, 12]) {
+      expect(passInputGate(out, "held")).toBe(false);
+      expect(inputGateArmed(out)).toBe(false);
+    }
+    // a release then arms: menu drags cannot steer until the finger lifts
+    releaseInputGate(out);
+    expect(inputGateArmed(out)).toBe(true);
+    expect(passInputGate(out, "held")).toBe(true);
+  });
+
+  it("release events while disarmed arm and neutralise", () => {
+    const out = makeInput();
+    out.steerX = 0.4;
+    disarmInputGate(out);
+    out.steerX = 0.4; // menu code could have written steer while disarmed
+    releaseInputGate(out);
+    expect(inputGateArmed(out)).toBe(true);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+  });
+
+  it("armed gate passes every event kind", () => {
+    const out = makeInput();
+    armInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(true);
+    expect(passInputGate(out, "held")).toBe(true);
+  });
+
+  it("an event at sim-time zero still counts as fresh activity", () => {
+    const out = makeInput();
+    pointerToSteer(600, 300, 800, 600, out, 0);
+    expect(out.lastInputTime).toBe(0);
+    expect(out.active).toBe(true);
   });
 });

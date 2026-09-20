@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Mesh, Scene } from "three";
 import { createTerrainMaterial } from "../../src/render/terrainMaterial";
 import { createChunkPool, fillChunk } from "../../src/render/terrainMesh";
+import { worldAlien } from "../sim/theme-test-helpers";
 import { createSkyMesh } from "../../src/render/sky";
 import { createPlaneMesh } from "../../src/render/plane";
 
@@ -13,7 +14,7 @@ describe("render smoke", () => {
     const pool = createChunkPool();
     for (const lod of [0, 1, 2] as const) {
       const geometry = pool.acquire(lod);
-      fillChunk(geometry, { cx: 0, cz: 0, lod }, 42);
+      fillChunk(geometry, { cx: 0, cz: 0, lod }, worldAlien(42));
       scene.add(new Mesh(geometry, material));
     }
     scene.add(createSkyMesh());

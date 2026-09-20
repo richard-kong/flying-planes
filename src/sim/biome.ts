@@ -2,6 +2,7 @@
 // 0 = Alpine, 1 = Foothills, 0.5 at each boundary, smoothstep over TRANSITION_WIDTH.
 import { BAND_WIDTH, TRANSITION_WIDTH } from "../constants";
 import { hash2 } from "./noise";
+import type { WorldContext } from "./themes";
 
 export interface BiomeParams {
   amplitude: number;
@@ -66,41 +67,45 @@ export function bandWeight(x: number, seed: number): number {
   return 1;
 }
 
-export function biomeParamsAt(x: number, seed: number, out: BiomeParams): BiomeParams {
-  const w = bandWeight(x, seed);
+// WorldContext (002): the blend weight stays a pure function of (x, seed) — the theme only
+// supplies the two regional endpoints. Alien's endpoints are the original ALPINE/FOOTHILLS
+// constants, so its output is bit-identical to the pre-Theme generator.
+export function biomeParamsAt(x: number, world: WorldContext, out: BiomeParams): BiomeParams {
+  const w = bandWeight(x, world.seed);
+  const lo = world.theme.bands[0];
+  const hi = world.theme.bands[1];
   if (w === 0) {
-    out.amplitude = ALPINE.amplitude;
-    out.baseFrequency = ALPINE.baseFrequency;
-    out.ridgeSharpness = ALPINE.ridgeSharpness;
-    out.heightOffset = ALPINE.heightOffset;
-    out.snowHeight = ALPINE.snowHeight;
-    out.forestTop = ALPINE.forestTop;
-    out.forestBottom = ALPINE.forestBottom;
-    out.rockSlope = ALPINE.rockSlope;
-    out.fogDensity = ALPINE.fogDensity;
+    out.amplitude = lo.amplitude;
+    out.baseFrequency = lo.baseFrequency;
+    out.ridgeSharpness = lo.ridgeSharpness;
+    out.heightOffset = lo.heightOffset;
+    out.snowHeight = lo.snowHeight;
+    out.forestTop = lo.forestTop;
+    out.forestBottom = lo.forestBottom;
+    out.rockSlope = lo.rockSlope;
+    out.fogDensity = lo.fogDensity;
     return out;
   }
   if (w === 1) {
-    out.amplitude = FOOTHILLS.amplitude;
-    out.baseFrequency = FOOTHILLS.baseFrequency;
-    out.ridgeSharpness = FOOTHILLS.ridgeSharpness;
-    out.heightOffset = FOOTHILLS.heightOffset;
-    out.snowHeight = FOOTHILLS.snowHeight;
-    out.forestTop = FOOTHILLS.forestTop;
-    out.forestBottom = FOOTHILLS.forestBottom;
-    out.rockSlope = FOOTHILLS.rockSlope;
-    out.fogDensity = FOOTHILLS.fogDensity;
+    out.amplitude = hi.amplitude;
+    out.baseFrequency = hi.baseFrequency;
+    out.ridgeSharpness = hi.ridgeSharpness;
+    out.heightOffset = hi.heightOffset;
+    out.snowHeight = hi.snowHeight;
+    out.forestTop = hi.forestTop;
+    out.forestBottom = hi.forestBottom;
+    out.rockSlope = hi.rockSlope;
+    out.fogDensity = hi.fogDensity;
     return out;
   }
-  out.amplitude = ALPINE.amplitude + (FOOTHILLS.amplitude - ALPINE.amplitude) * w;
-  out.baseFrequency = ALPINE.baseFrequency + (FOOTHILLS.baseFrequency - ALPINE.baseFrequency) * w;
-  out.ridgeSharpness =
-    ALPINE.ridgeSharpness + (FOOTHILLS.ridgeSharpness - ALPINE.ridgeSharpness) * w;
-  out.heightOffset = ALPINE.heightOffset + (FOOTHILLS.heightOffset - ALPINE.heightOffset) * w;
-  out.snowHeight = ALPINE.snowHeight + (FOOTHILLS.snowHeight - ALPINE.snowHeight) * w;
-  out.forestTop = ALPINE.forestTop + (FOOTHILLS.forestTop - ALPINE.forestTop) * w;
-  out.forestBottom = ALPINE.forestBottom + (FOOTHILLS.forestBottom - ALPINE.forestBottom) * w;
-  out.rockSlope = ALPINE.rockSlope + (FOOTHILLS.rockSlope - ALPINE.rockSlope) * w;
-  out.fogDensity = ALPINE.fogDensity + (FOOTHILLS.fogDensity - ALPINE.fogDensity) * w;
+  out.amplitude = lo.amplitude + (hi.amplitude - lo.amplitude) * w;
+  out.baseFrequency = lo.baseFrequency + (hi.baseFrequency - lo.baseFrequency) * w;
+  out.ridgeSharpness = lo.ridgeSharpness + (hi.ridgeSharpness - lo.ridgeSharpness) * w;
+  out.heightOffset = lo.heightOffset + (hi.heightOffset - lo.heightOffset) * w;
+  out.snowHeight = lo.snowHeight + (hi.snowHeight - lo.snowHeight) * w;
+  out.forestTop = lo.forestTop + (hi.forestTop - lo.forestTop) * w;
+  out.forestBottom = lo.forestBottom + (hi.forestBottom - lo.forestBottom) * w;
+  out.rockSlope = lo.rockSlope + (hi.rockSlope - lo.rockSlope) * w;
+  out.fogDensity = lo.fogDensity + (hi.fogDensity - lo.fogDensity) * w;
   return out;
 }

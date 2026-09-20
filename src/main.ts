@@ -1,5 +1,9 @@
 // Bootstrap: seed -> renderer -> fixed-step loop (R12) with prev/curr interpolation.
-import { Matrix4, Mesh, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from "three";
+// 002: all terrain/biome/surface sampling runs through WorldContext; world residency,
+// streaming and preparation live in render/world.ts; theme uniforms stage atomically via
+// applyThemeToMaterial/applyThemeToSky. The fresh-input gate is enforced at every event
+// boundary; menus (Phase 3+) disarm it.
+import { PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer } from "three";
 import {
   CHUNK_SIZE,
   CHUNKS_PER_FRAME,
@@ -11,21 +15,24 @@ import {
 } from "./constants";
 import { parseSeed, randomSeed } from "./sim/seed";
 import {
+  inputGateArmed,
   inputInactive,
+  passInputGate,
   pinchToThrottle,
   pointerToSteer,
+  releaseInputGate,
   touchDragToSteer,
   wheelToThrottle,
   type FlightInput,
 } from "./sim/input";
 import { createPlaneState, stepFlight, type PlaneState } from "./sim/flight";
 import { createAutopilotState, stepAutopilot } from "./sim/autopilot";
-import { stepCamera, type CameraPose } from "./sim/camera";
-import { createChunkGrid, createCoordTable, type ChunkKey } from "./sim/chunks";
+import { initCameraPose, stepCamera, type CameraPose } from "./sim/camera";
+import { themeById, type WorldContext } from "./sim/themes";
 import { createPlaneMesh } from "./render/plane";
-import { createSkyMesh, updateSkyMesh } from "./render/sky";
-import { createTerrainMaterial } from "./render/terrainMaterial";
-import { createChunkPool, fillChunk } from "./render/terrainMesh";
+import { applyThemeToSky, createSkyMesh, updateSkyMesh } from "./render/sky";
+import { applyThemeToMaterial, createTerrainMaterial } from "./render/terrainMaterial";
+import { createWorldRuntime } from "./render/world";
 
 // --- Seed (FR-018) ---
 const parsedSeed = parseSeed(location.search);
@@ -34,11 +41,15 @@ if (parsedSeed === undefined) {
   history.replaceState(null, "", `?seed=${seed}`);
 }
 
+// --- World context (002): boot flies the current (Alien) world until the chooser lands ---
+const bootWorld: WorldContext = { theme: themeById("alien"), seed };
+
 // --- Renderer / scene ---
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
 // Preserve the buffer only for the rendered smoke test; disabling it in production avoids
-// forcing an extra retained framebuffer on every device.
-const preserveDrawingBuffer = import.meta.env.DEV
+// forcing an extra retained framebuffer on every device. The verification build enables the
+// same hook via __VERIFY_HOOKS__ so the isolated bundle can read frames too.
+const preserveDrawingBuffer = (import.meta.env.DEV || __VERIFY_HOOKS__)
   && new URLSearchParams(location.search).has("renderTest");
 const renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer });
 renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DPR));
@@ -57,31 +68,35 @@ const terrainMaterial = createTerrainMaterial();
 // camera.position is mutated in place by the pose lerp, so this reference stays current
 terrainMaterial.uniforms.uCamPos.value = camera.position;
 const planePosUniform = terrainMaterial.uniforms.uPlanePos.value as Vector2;
-// view * projection for the water-plane depth projection in the terrain fragment shader
-const viewProjUniform = terrainMaterial.uniforms.uViewProj.value as Matrix4;
-const chunkGrid = createChunkGrid(VIEW_RINGS);
-const chunkPool = createChunkPool();
-const chunkMeshes = createCoordTable<Mesh>();
-const freeMeshes: Mesh[] = [];
-const toLoad: ChunkKey[] = [];
-const toFree: ChunkKey[] = [];
+// stage the whole Theme in one call so terrain, sky and fog change together (T016/T026)
+applyThemeToMaterial(terrainMaterial, bootWorld.theme);
+applyThemeToSky(sky, bootWorld.theme);
+
+const world = createWorldRuntime(scene, terrainMaterial, bootWorld);
 
 function resize(): void {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   // recompute the steer vector at the new viewport for the last pointer position;
-  // not a user event, so it must not count as fresh activity (T063). Skipped when the
-  // pointer has left the window (input.active false) so a resize can't resurrect a
-  // stale steering position.
-  if (hasPointer && input.active) {
+  // not a user event, so it must not count as fresh activity (T063) and must not arm a
+  // closed input gate. Skipped when the pointer has left the window (input.active false)
+  // so a resize can't resurrect a stale steering position.
+  if (hasPointer && input.active && inputGateArmed(input)) {
     pointerToSteer(lastPointerX, lastPointerY, innerWidth, innerHeight, input, simTime, false);
   }
 }
 addEventListener("resize", resize);
 
 // --- Input state (preallocated; only the handlers below write it) ---
-const input: FlightInput = { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: 0 };
+const input: FlightInput = {
+  steerX: 0,
+  steerY: 0,
+  throttle: 0.5,
+  active: false,
+  lastInputTime: 0,
+  gateArmed: true,
+};
 let simTime = 0;
 let inputSeen = false; // any steering/throttle event so far (hint + autopilot semantics)
 let touchStartX = 0;
@@ -101,14 +116,34 @@ addEventListener("pointermove", (e) => {
   hasPointer = true;
   lastPointerX = e.clientX;
   lastPointerY = e.clientY;
-  pointerToSteer(e.clientX, e.clientY, innerWidth, innerHeight, input, simTime);
+  // a drag (buttons held) is a held continuation; a plain hover is discrete
+  if (passInputGate(input, e.buttons > 0 ? "held" : "discrete")) {
+    pointerToSteer(e.clientX, e.clientY, innerWidth, innerHeight, input, simTime);
+  }
   inputSeen = true;
 });
-addEventListener("pointerleave", () => inputInactive(input));
-addEventListener("pointercancel", () => inputInactive(input));
-addEventListener("blur", () => inputInactive(input));
+addEventListener("pointerdown", () => {
+  // a click is a discrete event; while the gate is closed it arms without steering
+  passInputGate(input, "discrete");
+});
+addEventListener("pointerup", () => releaseInputGate(input));
+addEventListener("pointerleave", () => {
+  releaseInputGate(input);
+  inputInactive(input);
+});
+addEventListener("pointercancel", () => {
+  releaseInputGate(input);
+  inputInactive(input);
+});
+addEventListener("blur", () => {
+  releaseInputGate(input);
+  inputInactive(input);
+});
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) inputInactive(input);
+  if (document.hidden) {
+    releaseInputGate(input);
+    inputInactive(input);
+  }
 });
 
 function pinchDistance(e: TouchEvent): number {
@@ -124,11 +159,19 @@ addEventListener("touchstart", (e) => {
     touchStartX = t.clientX;
     touchStartY = t.clientY;
     pinchDist = 0;
-    touchDragToSteer(0, 0, input, simTime); // touch-down is activity even before a drag
+    // touch-down is a discrete event — dropped while disarmed (arms the gate), applied
+    // otherwise; either way it counts as activity even before a drag
+    if (passInputGate(input, "discrete")) {
+      touchDragToSteer(0, 0, input, simTime);
+    }
     inputSeen = true;
   } else if (e.touches.length === 2) {
-    pinchDist = pinchDistance(e);
-    input.lastInputTime = simTime;
+    if (passInputGate(input, "discrete")) {
+      pinchDist = pinchDistance(e);
+      input.lastInputTime = simTime;
+    } else {
+      pinchDist = 0;
+    }
     inputSeen = true;
   }
 });
@@ -154,7 +197,10 @@ addEventListener(
     pinchDist = 0;
     const t = e.touches[0];
     const lt = input.lastInputTime;
-    touchDragToSteer(t.clientX - touchStartX, t.clientY - touchStartY, input, simTime);
+    // a drag is a held continuation: it must not arm a closed gate or steer through it
+    if (passInputGate(input, "held")) {
+      touchDragToSteer(t.clientX - touchStartX, t.clientY - touchStartY, input, simTime);
+    }
     if (input.lastInputTime !== lt) inputSeen = true;
   },
   { passive: true },
@@ -167,20 +213,29 @@ addEventListener("touchend", (e) => {
     touchStartX = t.clientX;
     touchStartY = t.clientY;
     pinchDist = 0;
-    touchDragToSteer(0, 0, input, simTime);
+    if (passInputGate(input, "discrete")) {
+      touchDragToSteer(0, 0, input, simTime);
+    }
     return;
   }
   pinchDist = 0;
+  releaseInputGate(input); // all fingers up = a release: the next touch is fresh
   inputInactive(input);
 });
 addEventListener("touchcancel", () => {
   pinchDist = 0;
+  releaseInputGate(input);
   inputInactive(input);
 });
 addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
+    // a wheel tick is discrete: while disarmed it arms the gate without applying throttle
+    if (!passInputGate(input, "discrete")) {
+      inputSeen = true;
+      return;
+    }
     pendingWheelDelta = e.deltaY;
     pendingPinchScale = 1;
     hasPendingThrottle = true;
@@ -194,8 +249,8 @@ const hintEl = document.getElementById("hint");
 let hintHidden = false;
 
 // --- Sim state ---
-const curr: PlaneState = createPlaneState(seed);
-const prev: PlaneState = createPlaneState(seed);
+const curr: PlaneState = createPlaneState(bootWorld);
+const prev: PlaneState = createPlaneState(bootWorld);
 const autopilot = createAutopilotState();
 const steerOut: FlightInput = {
   steerX: 0,
@@ -203,6 +258,7 @@ const steerOut: FlightInput = {
   throttle: 0.5,
   active: false,
   lastInputTime: 0,
+  gateArmed: true,
 };
 const pose: CameraPose = {
   position: new Vector3(),
@@ -218,7 +274,7 @@ const posePrev: CameraPose = {
 // First frame (T054): converge the camera onto the plane before the loop starts so an
 // early rAF callback (elapsed < SIM_DT, zero sim steps) still renders the plane airborne
 // and framed behind-and-above instead of a camera at the origin.
-stepCamera(pose, curr, 1, seed);
+initCameraPose(pose, curr, bootWorld);
 posePrev.position.copy(pose.position);
 posePrev.target.copy(pose.target);
 posePrev.up.copy(pose.up);
@@ -232,8 +288,8 @@ function stepSim(dt: number): void {
   posePrev.target.copy(pose.target);
   posePrev.up.copy(pose.up);
   stepAutopilot(autopilot, input, simTime, dt, steerOut);
-  stepFlight(curr, autopilot.engaged ? steerOut : input, dt, seed);
-  stepCamera(pose, curr, dt, seed);
+  stepFlight(curr, autopilot.engaged ? steerOut : input, dt, world.world);
+  stepCamera(pose, curr, dt, world.world);
 }
 
 // --- Fixed-step loop (R12): accumulator, max steps then drop, prev/curr interpolation ---
@@ -285,37 +341,10 @@ function frame(now: number): void {
   // lookAt only sets the quaternion; the sky's inverse-view-projection needs the fresh
   // world matrix before updateSkyMesh consumes it (T064)
   camera.updateMatrixWorld();
-  viewProjUniform.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
 
-  // stream the chunk disc around the plane; fill at most CHUNKS_PER_FRAME new chunks
-  chunkGrid.update(curr.position.x, curr.position.z, toLoad, toFree);
-  for (let i = 0; i < toFree.length; i++) {
-    const key = toFree[i];
-    const mesh = chunkMeshes.get(key.cx, key.cz);
-    if (!mesh) continue;
-    chunkMeshes.delete(key.cx, key.cz);
-    scene.remove(mesh);
-    chunkPool.release(mesh.geometry);
-    freeMeshes.push(mesh);
-  }
-  for (let i = 0; i < toLoad.length && i < CHUNKS_PER_FRAME; i++) {
-    const key = toLoad[i];
-    const existing = chunkMeshes.get(key.cx, key.cz);
-    const geometry = chunkPool.acquire(key.lod);
-    fillChunk(geometry, key, seed);
-    if (existing) {
-      // lod change: swap the geometry in place so terrain never disappears (T055)
-      chunkPool.release(existing.geometry);
-      existing.geometry = geometry;
-    } else {
-      const mesh = freeMeshes.pop() ?? new Mesh(geometry, terrainMaterial);
-      mesh.geometry = geometry;
-      mesh.position.set(key.cx * CHUNK_SIZE, 0, key.cz * CHUNK_SIZE);
-      scene.add(mesh);
-      chunkMeshes.set(key.cx, key.cz, mesh);
-    }
-    chunkGrid.markResident(key);
-  }
+  // stream the chunk disc around the plane; fills are bounded per frame and defer on
+  // pool misses instead of allocating (002 T015)
+  world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
 
   // chunk morph bands track the plane's position in world space (T056)
   planePosUniform.set(plane.position.x, plane.position.z);
