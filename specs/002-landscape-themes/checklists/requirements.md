@@ -43,11 +43,16 @@ criterion. It does not mean the feature is implemented or its acceptance tests h
   FR-024 maps to SC-001/002/006 and the governing constitution.
 - Nature is newly Earth-like; Alien Planet preserves the existing landscape. Night is outside
   the release. Every page load selects Nature, with no remembered preference.
-- The skipped preview question is recorded as an assumption, not an explicit user decision.
-  Seed retention, paused startup scenery, and regional reuse are also documented defaults.
+- The initially skipped preview question was subsequently resolved in the planning interview:
+  use one-time actual-terrain renders at a fixed Seed. Seed retention, paused startup scenery,
+  and regional reuse remain documented defaults.
 - Initial review clarified that the one-activation Nature launch applies to the initial
   chooser; reopening the chooser instead selects the active Theme.
 - Existing immediate-start, hint-only UI, and global Pastel Dawn requirements are explicitly
   superseded where necessary. Constitution budgets remain in force.
-- Ready for `/speckit-plan`. Rendering, interaction, device performance, and the outstanding
-  First Flight convergence work still require implementation and verification.
+- The planning interview also permits rebuilding released terrain on Cancel, with a two-second
+  restoration limit, preserved Flight state, loading feedback, and a retry path. Reference-device
+  benchmarks will be run by the owner using the implementation's guide.
+- Revalidated after those decisions: 16/16 criteria still pass. Rendering, interaction, device
+  performance, and the outstanding First Flight convergence work still require implementation
+  and verification.
