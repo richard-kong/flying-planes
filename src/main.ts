@@ -123,6 +123,7 @@ addEventListener("touchstart", (e) => {
     inputSeen = true;
   } else if (e.touches.length === 2) {
     pinchDist = pinchDistance(e);
+    input.lastInputTime = simTime;
     inputSeen = true;
   }
 });
