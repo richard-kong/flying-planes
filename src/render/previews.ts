@@ -50,7 +50,6 @@ type VerifyInject =
   | { kind: "nullblob" }
   | undefined;
 declare global {
-  // eslint-disable-next-line no-var
   var __verifyPreview: ((themeId: ThemeId) => VerifyInject) | undefined;
 }
 function verifyPreviewInject(themeId: ThemeId): VerifyInject {

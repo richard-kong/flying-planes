@@ -623,7 +623,6 @@ let firstFrameMarked = false;
 
 // launch/restore verification injection (T029) — absent from the production bundle
 declare global {
-  // eslint-disable-next-line no-var
   var __verifyLaunch: ((themeId: ThemeId) => "fail" | { delay: number } | undefined) | undefined;
 }
 function verifyLaunchInject(themeId: ThemeId): "fail" | { delay: number } | undefined {
