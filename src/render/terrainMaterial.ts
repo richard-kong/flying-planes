@@ -1,8 +1,7 @@
 // One ShaderMaterial for terrain and lakes (R3). Vertex stage morphs each vertex toward its
-// next-coarser lod height near the outer edge of its lod band (T056), and flattens
-// below-water vertices to the water level. Water classification happens per FRAGMENT from
-// the interpolated unflattened terrain height, so shoreline triangles that mix land and
-// water keep the water region pinned to the fixed water plane (T057). Fragment stage does
+// next-coarser lod height near the outer edge of its lod band (T056). Terrain vertices remain
+// on the terrain surface; water is projected onto the fixed lake plane per fragment by
+// writing the plane's window-space depth for submerged fragments (T057). Fragment stage does
 // the altitude/slope palette, forest speckle, warm/cool sun shading, gold lakes with a
 // Blinn specular, and lavender fog that resolves to the shared skyGradient at the horizon
 // (FR-022b/c/d/e/g).
@@ -48,12 +47,10 @@ void main() {
   float cheb = max(abs(centre.x - planeC.x), abs(centre.y - planeC.y));
   float y = mix(wp.y, aMorph, smoothstep(biomeB.y, biomeB.z, cheb));
   vTerrainY = y;
-  float isWater = step(y, uWaterLevel);
-  if (isWater > 0.5) wp.y = uWaterLevel;
-  else wp.y = y;
+  wp.y = y;
   vWorldPos = wp;
   vec3 n = normalize(mat3(modelMatrix) * normal);
-  vNormal = mix(n, vec3(0.0, 1.0, 0.0), isWater);
+  vNormal = n;
   vBiomeA = biomeA;
   vBiomeB = biomeB;
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
@@ -83,11 +80,18 @@ varying vec4 vBiomeA;
 varying vec4 vBiomeB;
 
 void main() {
-  // water is classified per fragment on the true (unflattened) terrain height, so a
-  // triangle straddling the shoreline splits exactly where terrain crosses the level
+  // Classify on interpolated terrain height, then intersect the view ray with the fixed
+  // water plane. Writing that point's depth keeps mixed-triangle water truly horizontal.
   float wWater = step(vTerrainY, uWaterLevel);
+  vec3 waterPos = vWorldPos;
+  vec3 ray = vWorldPos - uCamPos;
+  float rayY = abs(ray.y) < 0.00001 ? (ray.y < 0.0 ? -0.00001 : 0.00001) : ray.y;
+  waterPos = uCamPos + ray * ((uWaterLevel - uCamPos.y) / rayY);
+  vec4 waterClip = projectionMatrix * viewMatrix * vec4(waterPos, 1.0);
+  if (wWater > 0.5) gl_FragDepth = 0.5 * waterClip.z / waterClip.w + 0.5;
+  vec3 surfacePos = wWater > 0.5 ? waterPos : vWorldPos;
   vec3 n = wWater > 0.5 ? vec3(0.0, 1.0, 0.0) : normalize(vNormal);
-  float h = vWorldPos.y;
+  float h = surfacePos.y;
   float snowH = vBiomeA.x;
   float forestTop = vBiomeA.y;
   float forestBottom = vBiomeA.z;
@@ -127,13 +131,13 @@ void main() {
 
   // Blinn specular toward the sun on lakes
   if (wWater > 0.5) {
-    vec3 vdir = normalize(uCamPos - vWorldPos);
+    vec3 vdir = normalize(uCamPos - surfacePos);
     vec3 hv = normalize(vdir + SUN_DIR);
     lit += uSunHalo * pow(max(dot(vec3(0.0, 1.0, 0.0), hv), 0.0), 48.0) * 0.6;
   }
 
   // lavender exponential fog, denser in valleys, resolves to the sky gradient (FR-022g)
-  vec3 toFrag = vWorldPos - uCamPos;
+  vec3 toFrag = surfacePos - uCamPos;
   float dist = length(toFrag);
   float sigma = fogDensity * (0.00055 + 0.0011 * exp(-max(h - uWaterLevel, 0.0) / 150.0));
   float f = 1.0 - exp(-dist * dist * sigma * sigma);
