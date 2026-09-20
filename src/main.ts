@@ -21,7 +21,7 @@ import {
 import { createPlaneState, stepFlight, type PlaneState } from "./sim/flight";
 import { createAutopilotState, stepAutopilot } from "./sim/autopilot";
 import { stepCamera, type CameraPose } from "./sim/camera";
-import { chunkId, createChunkGrid, type ChunkKey } from "./sim/chunks";
+import { createChunkGrid, type ChunkKey } from "./sim/chunks";
 import { createPlaneMesh } from "./render/plane";
 import { createSkyMesh, updateSkyMesh } from "./render/sky";
 import { createTerrainMaterial } from "./render/terrainMaterial";
@@ -54,7 +54,7 @@ const terrainMaterial = createTerrainMaterial();
 terrainMaterial.uniforms.uCamPos.value = camera.position;
 const chunkGrid = createChunkGrid(VIEW_RINGS);
 const chunkPool = createChunkPool();
-const chunkMeshes = new Map<number, Mesh>();
+const chunkMeshes = new Map<number, Map<number, Mesh>>();
 const freeMeshes: Mesh[] = [];
 const toLoad: ChunkKey[] = [];
 const toFree: ChunkKey[] = [];
@@ -70,13 +70,21 @@ resize();
 // --- Input state (preallocated; only the handlers below write it) ---
 const input: FlightInput = { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: 0 };
 let simTime = 0;
+let inputSeen = false; // any steering/throttle change so far (hint + autopilot semantics)
 let touchStartX = 0;
 let touchStartY = 0;
 let pinchDist = 0; // finger separation at the previous pinch event; 0 = not pinching
+// Throttle intents are buffered per frame: last device wins over others in the same frame
+// (Edge Cases: wheel + pinch). Pinch ratios compose while no wheel event interleaves.
+let pendingWheelDelta: number | null = null;
+let pendingPinchScale = 1;
+let hasPendingThrottle = false;
 
 addEventListener("pointermove", (e) => {
   if (e.pointerType === "touch") return; // touch steering comes from touch events
+  const t = input.lastInputTime;
   pointerToSteer(e.clientX, e.clientY, innerWidth, innerHeight, input, simTime);
+  if (input.lastInputTime !== t) inputSeen = true;
 });
 addEventListener("pointerleave", () => inputInactive(input));
 
@@ -98,14 +106,24 @@ addEventListener(
     if (e.touches.length === 2) {
       // pinch throttles; steering is frozen while two fingers are down (Edge Cases)
       const d = pinchDistance(e);
-      if (pinchDist > 0) pinchToThrottle(d / pinchDist, input, simTime);
+      if (pinchDist > 0) {
+        if (pendingWheelDelta !== null) {
+          pendingWheelDelta = null;
+          pendingPinchScale = 1;
+        }
+        pendingPinchScale *= d / pinchDist;
+        hasPendingThrottle = true;
+        inputSeen = true;
+      }
       pinchDist = d;
       return;
     }
     if (e.touches.length !== 1) return;
     pinchDist = 0;
     const t = e.touches[0];
+    const lt = input.lastInputTime;
     touchDragToSteer(t.clientX - touchStartX, t.clientY - touchStartY, input, simTime);
+    if (input.lastInputTime !== lt) inputSeen = true;
   },
   { passive: true },
 );
@@ -125,7 +143,10 @@ addEventListener(
   "wheel",
   (e) => {
     e.preventDefault();
-    wheelToThrottle(e.deltaY, input, simTime);
+    pendingWheelDelta = e.deltaY;
+    pendingPinchScale = 1;
+    hasPendingThrottle = true;
+    inputSeen = true;
   },
   { passive: false },
 );
@@ -177,6 +198,16 @@ function frame(now: number): void {
   lastNow = now;
   if (elapsed > 0.25) elapsed = 0.25; // hidden-tab guard (Edge Cases)
   accumulator += elapsed;
+
+  // apply the frame's winning throttle intent against the pre-frame throttle value
+  if (hasPendingThrottle) {
+    if (pendingWheelDelta !== null) wheelToThrottle(pendingWheelDelta, input, simTime);
+    else pinchToThrottle(pendingPinchScale, input, simTime);
+    pendingWheelDelta = null;
+    pendingPinchScale = 1;
+    hasPendingThrottle = false;
+  }
+
   let steps = 0;
   while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS_PER_FRAME) {
     stepSim(SIM_DT);
@@ -184,9 +215,14 @@ function frame(now: number): void {
     accumulator -= SIM_DT;
     steps += 1;
   }
-  if (steps === MAX_SIM_STEPS_PER_FRAME) accumulator = 0; // drop time
+  if (steps === MAX_SIM_STEPS_PER_FRAME && accumulator > 0) {
+    // sustained low frame rate: take one variable step instead of dropping time (FR-008)
+    stepSim(accumulator);
+    simTime += accumulator;
+    accumulator = 0;
+  }
 
-  if (!hintHidden && (input.lastInputTime > 0 || simTime >= HINT_TIMEOUT)) {
+  if (!hintHidden && (inputSeen || simTime >= HINT_TIMEOUT)) {
     hintHidden = true;
     hintEl?.classList.add("hidden");
   }
@@ -202,9 +238,11 @@ function frame(now: number): void {
   // stream the chunk disc around the plane; fill at most CHUNKS_PER_FRAME new chunks
   chunkGrid.update(curr.position.x, curr.position.z, toLoad, toFree);
   for (const key of toFree) {
-    const mesh = chunkMeshes.get(chunkId(key.cx, key.cz));
-    if (!mesh) continue;
-    chunkMeshes.delete(chunkId(key.cx, key.cz));
+    const col = chunkMeshes.get(key.cx);
+    const mesh = col?.get(key.cz);
+    if (!col || !mesh) continue;
+    col.delete(key.cz);
+    if (col.size === 0) chunkMeshes.delete(key.cx);
     scene.remove(mesh);
     chunkPool.release(mesh.geometry);
     freeMeshes.push(mesh);
@@ -217,7 +255,12 @@ function frame(now: number): void {
     mesh.geometry = geometry;
     mesh.position.set(key.cx * CHUNK_SIZE, 0, key.cz * CHUNK_SIZE);
     scene.add(mesh);
-    chunkMeshes.set(chunkId(key.cx, key.cz), mesh);
+    let col = chunkMeshes.get(key.cx);
+    if (col === undefined) {
+      col = new Map();
+      chunkMeshes.set(key.cx, col);
+    }
+    col.set(key.cz, mesh);
     chunkGrid.markResident(key);
   }
 
