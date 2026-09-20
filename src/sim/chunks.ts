@@ -46,6 +46,10 @@ function hashCoord(cx: number, cz: number): number {
 }
 
 export function createCoordTable<V>(capacityPow2 = 4096): CoordTable<V> {
+  if (!Number.isSafeInteger(capacityPow2) || capacityPow2 < 2
+    || (capacityPow2 & (capacityPow2 - 1)) !== 0) {
+    throw new RangeError("CoordTable capacity must be a power of two greater than one");
+  }
   const cap = capacityPow2;
   const mask = cap - 1;
   const sx = new Int32Array(cap);
@@ -89,6 +93,9 @@ export function createCoordTable<V>(capacityPow2 = 4096): CoordTable<V> {
       return used[i] !== 0 ? vals[i] : undefined;
     },
     set(cx: number, cz: number, value: V): void {
+      if (size === cap - 1 && this.get(cx, cz) === undefined) {
+        throw new RangeError("CoordTable capacity exceeded");
+      }
       const i = slotOf(cx, cz);
       if (used[i] === 0) {
         used[i] = 1;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createChunkGrid,
+  createCoordTable,
   lodForRing,
   type ChunkKey,
 } from "../../src/sim/chunks";
@@ -24,6 +25,21 @@ function discAt(pcx: number, pcz: number): Map<string, number> {
 }
 
 const keyOf = (k: ChunkKey) => `${k.cx},${k.cz},${k.lod}`;
+
+describe("createCoordTable", () => {
+  it("rejects invalid capacities and fails before becoming full", () => {
+    expect(() => createCoordTable(3)).toThrow(RangeError);
+    expect(() => createCoordTable(1)).toThrow(RangeError);
+
+    const table = createCoordTable<number>(4);
+    table.set(0, 0, 1);
+    table.set(1, 0, 2);
+    table.set(2, 0, 3);
+    expect(() => table.set(3, 0, 4)).toThrow(RangeError);
+    table.set(2, 0, 4);
+    expect(table.get(2, 0)).toBe(4);
+  });
+});
 
 describe("lodForRing", () => {
   it("maps rings per LOD_RINGS", () => {

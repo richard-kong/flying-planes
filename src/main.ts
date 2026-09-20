@@ -36,8 +36,11 @@ if (parsedSeed === undefined) {
 
 // --- Renderer / scene ---
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
-// preserveDrawingBuffer lets the WebGL smoke test read back rendered pixels
-const renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+// Preserve the buffer only for the rendered smoke test; disabling it in production avoids
+// forcing an extra retained framebuffer on every device.
+const preserveDrawingBuffer = import.meta.env.DEV
+  && new URLSearchParams(location.search).has("renderTest");
+const renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer });
 renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_DPR));
 
 const scene = new Scene();

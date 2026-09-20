@@ -42,7 +42,7 @@ beforeAll(async () => {
   await server.listen();
   const address = server.httpServer?.address();
   const port = typeof address === "object" && address ? address.port : 5173;
-  url = `http://localhost:${port}/?seed=42`;
+  url = `http://localhost:${port}/?seed=42&renderTest`;
 
   const executablePath = await chromeExecutable();
   if (!executablePath) {
