@@ -13,8 +13,20 @@ a theme. It should allow users to set the theme at start up."
 existing landscape becomes Alien Planet. Nature gains Earth-like terrain, colours, and daylight;
 Arctic has glacial valleys, snow, blue ice, and frozen lakes. Every page load opens a chooser with
 Nature selected. Fly starts the flight. Change theme pauses it; Cancel resumes it; Fly starts
-a fresh flight in the selected Theme. Preview cards are a documented default after the user
-skipped that question and directed work to continue.
+a fresh flight in the selected Theme. The planning interview confirmed static preview cards
+rendered from actual Theme terrain and allowed Cancel to briefly restore a released landscape.
+
+## Clarifications
+
+### Session 2026-09-20
+
+- Q: May Cancel briefly load if the previous landscape has been released to reduce memory
+  during a Theme change? → A: Yes. Preserve the paused Flight's state and restore its landscape
+  within two seconds, with visible loading feedback and no elapsed-flight-time catch-up.
+- Q: What should the static Theme previews show? → A: One-time renders of actual Theme terrain
+  at a fixed Seed, generated during the page visit rather than shipped as image assets.
+- Q: How will reference-device performance be verified? → A: Automated functional and rendering
+  checks plus a benchmark guide for the owner to run on their laptop and phone before release.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -96,7 +108,8 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
    Chase Camera, and flight timers pause, and the current Theme is selected in the chooser.
 2. **Given** a paused flight, **When** the visitor selects another Theme and presses Cancel,
    **Then** the original Theme, Seed, position, orientation, speed, and Autopilot state resume
-   without a jump or elapsed-time catch-up.
+   without a jump or elapsed-time catch-up. If its landscape was released during preparation,
+   a visible restoring state precedes resumption, which occurs within two seconds of Cancel.
 3. **Given** a paused flight, **When** the visitor selects another Theme and presses Fly,
    **Then** a new flight starts in that Theme at its normal starting position and safe height,
    with default Throttle, neutral steering, and fresh Autopilot and hint timers.
@@ -107,15 +120,19 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
    Menu interactions do not become steering or Throttle events on resume.
 6. **Given** a new world cannot be prepared, **When** an attempted launch fails, **Then** the
    chooser remains usable with a clear error and retry path; Cancel can still resume any prior
-   flight. The app does not expose a partly changed world.
+   flight, rebuilding its landscape if necessary. The app does not expose a partly changed world.
+7. **Given** a recoverable failure while restoring a cancelled flight, **When** restoration
+   fails, **Then** the prior Flight's state remains preserved, the error is explained, and the
+   visitor can retry restoration or choose a Theme for a fresh flight.
 
 ### Edge Cases
 
 - Rapidly selecting several Themes: only the last selected card is launched.
 - Repeated presses of Fly during preparation: one new flight starts, with no overlapping
   launches; selection and Fly are unavailable until preparation succeeds or fails.
-- Cancel during preparation from an existing flight: the original flight resumes and any
-  later completion of the abandoned launch cannot replace it.
+- Cancel during preparation from an existing flight: restore the original landscape if it was
+  released, then resume the original flight. Any later completion of the abandoned launch cannot
+  replace it. Repeated actions during restoration must not create competing restores or launches.
 - A touch drag or pinch is in progress when opening the chooser: it is ended at that boundary;
   starting or resuming flight requires fresh steering input.
 - The pointer remains over Fly or Cancel after closing the chooser: that resting position
@@ -180,7 +197,9 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
   controls or count as flight activity.
 - **FR-015**: Cancel MUST discard pending selection and resume the preserved flight with
   its Theme, Seed, pose, speed, and Autopilot state unchanged. Menu time MUST NOT be replayed.
-  Cancel-to-flight MUST only be offered when a prior flight exists.
+  Cancel-to-flight MUST only be offered when a prior flight exists. If the previous landscape
+  was released during preparation, Cancel MAY first restore it, with visible progress and the
+  flight paused throughout; resumption MUST occur within two seconds on the reference devices.
 - **FR-016**: Fly MUST start a fresh flight even when the selected Theme matches the current
   one. Reset to the normal starting horizontal position and heading, safe altitude for that
   world's surface, level attitude, default Throttle, neutral steering, and fresh idle/hint
@@ -194,8 +213,10 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
 - **FR-019**: A new flight MUST become active only when its terrain, surfaces, sky, and safe
   starting view are ready together. There MUST be no visible mix of old and new Themes.
 - **FR-020**: A failed launch MUST retain the chooser selection, explain failure, and permit
-  retry or another selection. A prior flight MUST remain recoverable through Cancel during
-  preparation or after failure; an abandoned launch MUST NOT replace a resumed flight.
+  retry or another selection. A prior Flight's state MUST remain preserved and recoverable
+  through Cancel during preparation or after failure, even if its landscape needs rebuilding.
+  An abandoned launch MUST NOT replace a restored flight. A recoverable restoration failure
+  MUST preserve that state and offer retry or a fresh flight, without exposing a partial world.
 
 **Presentation and compatibility**
 
@@ -205,8 +226,10 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
 - **FR-022**: Outside the chooser and temporary launch/error feedback, the only flight UI
   MUST be Change theme and the temporary control hint.
 - **FR-023**: Theme previews MUST represent the specified landforms and colour relationships,
-  including the existing look for Alien Planet. They need not reproduce the current Seed.
-  Selecting a preview MUST NOT replace the paused world or start a live Theme preview.
+  including the existing look for Alien Planet. They MUST be static, one-time renders of actual
+  Theme terrain at a fixed Seed, generated during the page visit without shipped image assets.
+  They need not reproduce the visitor's current Seed. Selecting a preview MUST NOT replace the
+  paused world, regenerate the preview, or start a live Theme preview.
 - **FR-024**: The feature MUST retain the constitution's performance, procedural-content,
   and flight-input constraints. Pausing for selection MUST NOT relax the initial rendering
   budget or the per-Theme flight performance budgets.
@@ -228,8 +251,9 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
 ### Measurable Outcomes
 
 - **SC-001**: Within two seconds of navigation over simulated 4G, the initial Nature scene
-  and usable chooser are visible on the reference devices. The scene remains stationary until
-  Fly. Initial rendering is measured separately from the visitor's decision time.
+  and usable chooser with all three previews are visible on the reference devices. The scene
+  remains stationary until Fly. Initial rendering is measured separately from the visitor's
+  decision time.
 - **SC-002**: From the initial ready chooser, Nature needs one activation of Fly; either other Theme
   needs one selection and one activation. For all three Themes, a ready, controllable flight
   appears within two seconds of Fly on the reference devices.
@@ -239,24 +263,25 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
 - **SC-004**: In every directed Theme change and same-Theme restart on desktop and touch,
   Fly launches the selected world from its starting state. Cancel, including after 60 seconds
   paused or a hidden tab, preserves the prior flight without movement during the pause,
-  accidental steering, or catch-up.
+  accidental steering, or catch-up. When Cancel requires landscape restoration, the preserved
+  flight is visible and controllable within two seconds on the reference devices.
 - **SC-005**: Repeating a flight with the same Theme and Seed produces matching terrain and
   lake or frozen-lake positions; reloading after any Theme always selects Nature.
 - **SC-006**: Each Theme sustains the existing 60 fps laptop and 30 fps phone targets during
   a five-minute representative flight. Fifty consecutive Theme changes do not cause failure,
   sustained growth in browser memory usage after warm-up, mixed-theme frames, or a breach of
   those targets.
-- **SC-007**: The chooser passes its selection, launch, cancel, failure/retry, resize, and
-  orientation scenarios on mouse and touch; every menu action is also usable by keyboard with
-  a visible focus indicator. Flight steering remains pointer/touch-only.
+- **SC-007**: The chooser passes its selection, launch, cancel/restoration, failure/retry,
+  resize, and orientation scenarios on mouse and touch; every menu action is also usable by
+  keyboard with a visible focus indicator. Flight steering remains pointer/touch-only.
 
 ## Assumptions
 
 ### Defaults adopted after the interview
 
-- The preview-style question was skipped with an instruction to continue. Use representative
-  visual cards with names and descriptions; live preview is excluded. Previews follow the
-  constitution's procedural-content rule and do not require external image assets.
+- The initial preview-style question was skipped with an instruction to continue. The planning
+  interview subsequently confirmed representative visual cards with names and descriptions,
+  using one-time actual-terrain renders at a fixed Seed. Live preview remains excluded.
 - On reopening the chooser, select the currently flown Theme. Pause the entire flight while
   browsing. Retain one Seed for the page visit so restarting is distinct from generating a
   new random world. These are defaults consistent with the agreed resume/restart behaviour.
@@ -268,7 +293,9 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
   the existing first-rendered-frame budget.
 - Reference devices retain First Flight's definition: a three-year-old integrated-GPU laptop
   and a three-year-old mid-tier Android phone or iPhone. The two-second launch target and
-  repeated-switch checks are acceptance targets to verify during implementation.
+  restoration target and repeated-switch checks are acceptance targets to verify during
+  implementation. The owner will run the benchmark guide on their laptop and phone; record
+  device/browser details and do not substitute software-rendered VM results for these measurements.
 
 ### Scope and dependencies
 
