@@ -146,7 +146,8 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
   }
 
   // morph targets (T056): height of each vertex on the next-coarser lod grid. Even grid
-  // indices coincide with parent samples; odd indices take the bilinear midpoint. The
+  // indices coincide with parent samples; odd indices interpolate the same two triangles
+  // emitted by buildIndex, so the morphed surface exactly matches the coarser mesh. The
   // coarsest lod has no parent — morph height equals the vertex height, so the band is
   // inert there. Skirt verts keep their drop offset so they never lift out of the ground.
   const morphEnd = lod < 2 ? LOD_RINGS[lod] + 0.5 : 0.001;
@@ -169,7 +170,11 @@ export function fillChunk(geometry: BufferGeometry, key: ChunkKey, seed: number)
       const h10 = heightsScratch[z0 * stride + x1];
       const h01 = heightsScratch[z1 * stride + x0];
       const h11 = heightsScratch[z1 * stride + x1];
-      const mhi = h00 + (h10 - h00) * fx + (h01 + (h11 - h01) * fx - (h00 + (h10 - h00) * fx)) * fz;
+      // Match buildIndex's a-c-b / b-c-d split. The two triangle planes meet on the
+      // diagonal from h10 to h01; bilinear interpolation would not match that surface.
+      const mhi = fx + fz <= 1
+        ? h00 + (h10 - h00) * fx + (h01 - h00) * fz
+        : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
       m[v] = mhi - (isEdge ? SKIRT_DEPTH : 0);
       b[v * 4 + 1] = morphStart;
       b[v * 4 + 2] = morphEnd;
