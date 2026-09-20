@@ -11,6 +11,7 @@ import {
   MIN_ALTITUDE_ABOVE_TERRAIN,
   MIN_SPEED,
   TURN_RATE_PER_ROLL,
+  WATER_LEVEL,
 } from "../constants";
 import { heightAt } from "./terrain";
 import type { FlightInput } from "./input";
@@ -78,8 +79,10 @@ export function stepFlight(
   const nz = state.position.z + fz * state.speed * dt;
   let ny = state.position.y + fy * state.speed * dt;
 
-  // soft floor (FR-006): eased vertical velocity inside FLOOR_BAND, hard backstop at minY
-  const minY = heightAt(nx, nz, seed) + MIN_ALTITUDE_ABOVE_TERRAIN;
+  // soft floor (FR-006): eased vertical velocity inside FLOOR_BAND, hard backstop at minY.
+  // The floor is measured from the water surface where terrain dips below it (Edge Cases).
+  const groundY = heightAt(nx, nz, seed);
+  const minY = (groundY < WATER_LEVEL ? WATER_LEVEL : groundY) + MIN_ALTITUDE_ABOVE_TERRAIN;
   if (ny <= minY + FLOOR_BAND) {
     const t = Math.max(0, ny - minY) / FLOOR_BAND; // 0 at the floor, 1 at band top
     const ease = t * t;

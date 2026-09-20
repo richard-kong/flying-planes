@@ -65,7 +65,7 @@ describe("stepAutopilot", () => {
       maxX = Math.max(maxX, out.steerX);
       expect(out.steerY).toBe(0);
     }
-    const expected = (AUTOPILOT_BANK_AMPL * (Math.PI / 180)) / MAX_ROLL;
+    const expected = AUTOPILOT_BANK_AMPL / MAX_ROLL; // 12deg / 45deg ~ 0.267
     expect(maxAbs).toBeLessThan(0.5);
     expect(maxX).toBeCloseTo(expected, 1);
     expect(minX).toBeCloseTo(-expected, 1);
@@ -75,13 +75,12 @@ describe("stepAutopilot", () => {
     const ap = createAutopilotState();
     const input = makeInput({ lastInputTime: 0 });
     const out = makeSteerOut();
-    // quarter period after banking starts: steerX should be near max amplitude
-    const t0 = IDLE_TO_AUTOPILOT + LEVEL_OUT_TIME;
+    // engagement happens at t0; banking starts LEVEL_OUT_TIME after that
+    const t0 = IDLE_TO_AUTOPILOT + 0.5;
     stepAutopilot(ap, input, t0, SIM_DT, out);
-    const quarter = t0 + 0.25 / AUTOPILOT_BANK_HZ;
+    const quarter = t0 + LEVEL_OUT_TIME + 0.25 / AUTOPILOT_BANK_HZ;
     stepAutopilot(ap, input, quarter, SIM_DT, out);
-    const expected = (AUTOPILOT_BANK_AMPL * (Math.PI / 180)) / MAX_ROLL;
-    expect(out.steerX).toBeCloseTo(expected, 1);
+    expect(out.steerX).toBeCloseTo(AUTOPILOT_BANK_AMPL / MAX_ROLL, 1);
   });
 
   it("any input change disengages on the same step", () => {

@@ -21,7 +21,7 @@ export function createAutopilotState(): AutopilotState {
   return { engaged: false, engagedAt: 0, lastSeenInputTime: -Infinity };
 }
 
-const BANK_STEER = (AUTOPILOT_BANK_AMPL * (Math.PI / 180)) / MAX_ROLL;
+const BANK_STEER = AUTOPILOT_BANK_AMPL / MAX_ROLL;
 const TWO_PI = Math.PI * 2;
 
 export function stepAutopilot(

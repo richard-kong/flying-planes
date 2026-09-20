@@ -11,6 +11,7 @@ import {
   MIN_ALTITUDE_ABOVE_TERRAIN,
   MIN_SPEED,
   SIM_DT,
+  WATER_LEVEL,
 } from "../../src/constants";
 
 const SEED = 42;
@@ -110,6 +111,33 @@ describe("stepFlight floor and speed", () => {
       prev = s.speed;
     }
     expect(s.speed).toBeCloseTo(MIN_SPEED, 6);
+  });
+
+  it("the floor is measured from the water surface over lakes", () => {
+    // find a seed/point where terrain dips below WATER_LEVEL, place the plane there nose-down
+    let lakeSeed = -1;
+    for (let s = 0; s < 200; s++) {
+      let found = false;
+      for (let x = -2000; x <= 2000 && !found; x += 50) {
+        for (let z = -2000; z <= 2000; z += 50) {
+          if (heightAt(x, z, s) < WATER_LEVEL - 20) {
+            lakeSeed = s;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+    expect(lakeSeed).toBeGreaterThanOrEqual(0);
+    const s = createPlaneState(lakeSeed);
+    const input = makeInput({ steerY: -1 });
+    for (let i = 0; i < 60 / SIM_DT; i++) {
+      stepFlight(s, input, SIM_DT, lakeSeed);
+      expect(s.position.y).toBeGreaterThanOrEqual(WATER_LEVEL + MIN_ALTITUDE_ABOVE_TERRAIN - 30 - 1e-6);
+    }
+    // after easing, the plane must never end up below the water surface
+    expect(s.position.y).toBeGreaterThanOrEqual(WATER_LEVEL - 1e-6);
   });
 
   it("is deterministic: identical inputs give bit-identical state", () => {
