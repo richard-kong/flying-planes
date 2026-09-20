@@ -56,3 +56,8 @@ criterion. It does not mean the feature is implemented or its acceptance tests h
 - Revalidated after those decisions: 16/16 criteria still pass. Rendering, interaction, device
   performance, and the outstanding First Flight convergence work still require implementation
   and verification.
+- Revalidated after visual approval: 16/16 criteria still pass. The
+  [approved N4 and A4 references](../spec.md#approved-visual-references) link the pinned study
+  revision and both camera captures to User Story 2, FR-007/009, and SC-003. Approval establishes
+  visual direction; endless terrain, generated previews, and device performance still require
+  implementation and acceptance evidence.
