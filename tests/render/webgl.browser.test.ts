@@ -63,41 +63,71 @@ function samplePixels(): Promise<PixelStats | null> {
   });
 }
 
+interface WorldStats {
+  residents: number;
+  queued: number;
+  surfaces: number;
+  generation: number;
+}
+
+// 002 T034: every theme flies through the chooser and must render a live world with at
+// least one clipped water/ice sheet drawn — not just a constructed scene.
+const THEMES = [
+  { id: "nature", label: "Nature" },
+  { id: "alien", label: "Alien Planet" },
+  { id: "arctic", label: "Arctic" },
+] as const;
+
 describe("webgl smoke", () => {
-  it(
-    "renders real WebGL2 frames with terrain, sky, and the plane — no shader errors",
-    async () => {
-      await page.goto(`${BASE}/?seed=42&renderTest`, { waitUntil: "load" });
-      // 002: the chooser opens first — select Alien (the original world) and launch it
-      await page.waitForFunction(
-        () =>
-          document.body.dataset.readyChooser === "true" ||
-          document.body.dataset.phase === "choosing",
-        { timeout: 120_000 },
-      );
-      await page.click('#chooser input[value="alien"]');
-      await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
-        timeout: 120_000,
-      });
+  for (const theme of THEMES) {
+    it(
+      `renders real WebGL2 frames for ${theme.label} — terrain, sky, plane, surface`,
+      async () => {
+        await page.goto(`${BASE}/?seed=42&renderTest`, { waitUntil: "load" });
+        await page.waitForFunction(
+          () =>
+            document.body.dataset.readyChooser === "true" ||
+            document.body.dataset.phase === "choosing",
+          { timeout: 120_000 },
+        );
+        await page.click(`#chooser input[value="${theme.id}"]`);
+        await page.click("#fly");
+        await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+          timeout: 120_000,
+        });
 
-      // let the sim run a few seconds so terrain streams in and the camera settles
-      let stats: PixelStats | null = null;
-      for (let i = 0; i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 250));
-        stats = await samplePixels();
-        if (stats && stats.unique > 32) break;
-      }
+        // let the sim run so terrain streams in, the camera settles, and a clipped
+        // water/ice sheet reaches residency (lakes may sit outside the prep cone —
+        // the lazy streamer catches them within seconds of flight)
+        let stats: PixelStats | null = null;
+        let wstats: WorldStats | null = null;
+        const readStats = () =>
+          page.evaluate(
+            () =>
+              (globalThis as { __verifyStats?: () => WorldStats }).__verifyStats?.() ??
+              null,
+          );
+        for (let i = 0; i < 120; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+          stats = await samplePixels();
+          wstats = await readStats();
+          if (stats && stats.unique > 32 && wstats && wstats.surfaces > 0) break;
+        }
 
-      expect(pageErrors).toEqual([]);
-      expect(
-        consoleErrors.filter((e) => !e.includes("Automatic fallback to software WebGL")),
-      ).toEqual([]);
-      expect(stats).not.toBeNull();
-      expect(stats!.unique).toBeGreaterThan(32);
-      // the sky gradient must differ between the top and bottom of the frame
-      expect(stats!.topY).not.toEqual(stats!.bottomY);
-    },
-    60_000,
-  );
+        expect(pageErrors).toEqual([]);
+        expect(
+          consoleErrors.filter((e) => !e.includes("Automatic fallback to software WebGL")),
+        ).toEqual([]);
+        expect(stats).not.toBeNull();
+        expect(stats!.unique).toBeGreaterThan(32);
+        // the sky gradient must differ between the top and bottom of the frame
+        expect(stats!.topY).not.toEqual(stats!.bottomY);
+        // live world: resident terrain plus at least one drawn water/ice sheet
+        expect(wstats).not.toBeNull();
+        expect(wstats!.residents).toBeGreaterThan(0);
+        expect(wstats!.surfaces).toBeGreaterThan(0);
+      },
+      120_000,
+    );
+  }
 });

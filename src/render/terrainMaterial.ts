@@ -107,9 +107,12 @@ void main() {
   // soft shoreline blend toward the shore tint near the surface level
   col = mix(uShoreline, col, smoothstep(uWaterLevel, uWaterLevel + 8.0, h));
 
-  // water/ice sheet: flat themed colour, sun-dominated specular (FR-022c)
+  // water/ice sheet: depth-graded tint with a shoreline rim, sun-dominated specular
+  // (FR-022c). vBiomeA.x carries the terrain height under this surface vert.
   if (wSurface > 0.5) {
-    col = mix(uLakeNear, uLakeDeep, 0.35 + 0.14 * sin(vWorldPos.z * 0.0015));
+    float depth = uWaterLevel - vBiomeA.x;
+    vec3 lake = mix(uLakeNear, uLakeDeep, smoothstep(0.0, 8.0, depth));
+    col = mix(uShoreline, lake, smoothstep(0.0, 2.0, depth));
   }
 
   // sun-orientation shading, warm/cool, soft contrast (FR-022b)

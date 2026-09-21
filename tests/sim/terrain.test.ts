@@ -262,3 +262,150 @@ describe("alien bypasses valley shaping", () => {
     }
   });
 });
+
+// --- 002 T032: per-theme quantitative landform measurements ---
+// These establish the tuning assertions BEFORE N4/A4 calibration: Nature must measure
+// gentler than Alien with comparable lakes; Arctic must produce broad flat floors and
+// distinct sculpted ridges. Values measured over a 24 km x 24 km grid at 200 m.
+describe("per-theme landform measurements (T032)", () => {
+  const SEED = 42;
+  const GRID_RANGE = 12000;
+  const GRID_STEP = 200;
+  const n3 = new Vector3();
+
+  interface Stats {
+    n: number;
+    heights: number[];
+    belowSurface: number; // fraction of samples below the theme's surface level
+    flat: number; // fraction of samples with normal.y > 0.99 (~< 8 degrees)
+    roughness: number; // rms of 200 m height differences
+    ridgeMax: number;
+    p10: number;
+    p90: number;
+  }
+
+  const statsCache = new Map<string, Stats>();
+  function stats(id: "nature" | "alien" | "arctic"): Stats {
+    const cached = statsCache.get(id);
+    if (cached) return cached;
+    const world = worldOf(id, SEED);
+    const heights: number[] = [];
+    let below = 0;
+    let flat = 0;
+    let sd = 0;
+    let sdN = 0;
+    for (let x = -GRID_RANGE; x <= GRID_RANGE; x += GRID_STEP) {
+      for (let z = -GRID_RANGE; z <= GRID_RANGE; z += GRID_STEP) {
+        const h = heightAt(x, z, world);
+        heights.push(h);
+        if (h < world.theme.surface.level) below++;
+        if (normalAt(x, z, world, n3).y > 0.99) flat++;
+        if (x + GRID_STEP <= GRID_RANGE) {
+          const d = heightAt(x + GRID_STEP, z, world) - h;
+          sd += d * d;
+          sdN++;
+        }
+      }
+    }
+    heights.sort((a, b) => a - b);
+    const q = (p: number) => heights[Math.floor(p * (heights.length - 1))];
+    const out: Stats = {
+      n: heights.length,
+      heights,
+      belowSurface: below / heights.length,
+      flat: flat / heights.length,
+      roughness: Math.sqrt(sd / sdN),
+      ridgeMax: heights[heights.length - 1],
+      p10: q(0.1),
+      p90: q(0.9),
+    };
+    statsCache.set(id, out);
+    return out;
+  }
+
+  it("Nature is gentler than Alien (lower relief and roughness) with comparable lakes", () => {
+    const nat = stats("nature");
+    const ali = stats("alien");
+    expect(nat.roughness).toBeLessThan(ali.roughness * 0.85);
+    expect(nat.p90 - nat.p10).toBeLessThan(ali.p90 - ali.p10);
+    expect(nat.belowSurface).toBeGreaterThan(0.05); // turquoise lakes actually present
+    expect(nat.ridgeMax).toBeGreaterThan(800); // still mountainous
+    expect(nat.ridgeMax).toBeLessThan(ali.ridgeMax);
+  });
+
+  it("Arctic has broad flat basins and sculpted ridges distinct from both others", () => {
+    const arc = stats("arctic");
+    const ali = stats("alien");
+    // valley shaping floods >40% of sampled terrain below the ice level
+    expect(arc.belowSurface).toBeGreaterThan(0.4);
+    // and keeps sharper relief between floors and ridgelines than Alien's rolling mix
+    expect(arc.roughness).toBeGreaterThan(ali.roughness);
+    expect(arc.ridgeMax).toBeGreaterThan(1100);
+  });
+
+  it("every theme produces both land and surface regions (lakes exist everywhere)", () => {
+    for (const id of ["nature", "alien", "arctic"] as const) {
+      const s = stats(id);
+      expect(s.belowSurface, `${id} below-surface`).toBeGreaterThan(0.02);
+      expect(s.belowSurface, `${id} below-surface`).toBeLessThan(0.8);
+    }
+  });
+
+  it("heights are finite and normals unit-length at negative/distant coordinates", () => {
+    for (const id of ["nature", "alien", "arctic"] as const) {
+      const world = worldOf(id, SEED);
+      for (const [x, z] of [
+        [-1e6, 250000],
+        [250000, -12345],
+        [-777777, 555555],
+        [1e6, -2e5],
+      ]) {
+        const h = heightAt(x, z, world);
+        expect(Number.isFinite(h), `${id} h @(${x},${z})`).toBe(true);
+        const nrm = normalAt(x, z, world, n3);
+        expect(nrm.length(), `${id} n @(${x},${z})`).toBeCloseTo(1, 5);
+      }
+    }
+  });
+
+  it("slab maxima change gradually across a band transition for every theme", () => {
+    // deterministic transition route: find an A->F boundary then sweep across it
+    let xB = -1;
+    for (let x = 0; x < 2 * BAND_WIDTH; x += 10) {
+      if (bandWeight(x, SEED) < 0.5 && bandWeight(x + 10, SEED) >= 0.5) {
+        xB = x + 10;
+        break;
+      }
+    }
+    expect(xB).toBeGreaterThan(0);
+    for (const id of ["nature", "alien", "arctic"] as const) {
+      const world = worldOf(id, SEED);
+      const slabs: number[] = [];
+      for (
+        let x0 = xB - TRANSITION_WIDTH - 500;
+        x0 < xB + TRANSITION_WIDTH + 500;
+        x0 += 100
+      ) {
+        let max = -Infinity;
+        for (let dx = 0; dx < 100; dx += 20) {
+          for (let dz = -600; dz <= 600; dz += 50) {
+            max = Math.max(max, heightAt(x0 + dx, dz, world));
+          }
+        }
+        slabs.push(max);
+      }
+      // arctic's valley-shaping transform plus its larger amplitude contrast produces
+      // continuous but steep sculpted ridges at the seam; bound both the 90th-percentile
+      // step (the seam must be mostly gradual) and the worst spike by each theme's own
+      // band amplitude swing — deltas above the swing would mean a hard break
+      const swing =
+        Math.abs(world.theme.bands[0].amplitude - world.theme.bands[1].amplitude);
+      const deltas = slabs.slice(1).map((s, i) => Math.abs(s - slabs[i]));
+      deltas.sort((a, b) => a - b);
+      const p90 = deltas[Math.floor(deltas.length * 0.9)];
+      const worst = deltas[deltas.length - 1];
+      expect(p90, `${id} p90`).toBeLessThan(Math.max(400, swing * 0.75));
+      expect(worst, `${id} max`).toBeLessThan(Math.max(500, swing * 1.2));
+    }
+  });
+});

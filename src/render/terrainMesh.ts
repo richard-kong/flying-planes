@@ -427,6 +427,9 @@ export function countChunkSurface(fill: ChunkFill): { verts: number; indices: nu
 
 // Per-vertex attributes for the emitted surface verts: flat up normal, fog density sampled
 // like terrain, aMorph pinned to the level so the morph band never lifts the sheet.
+// biomeA.x carries the terrain height beneath the surface vert so the fragment shader can
+// grade the water/ice tint by depth like the baseline renderer (grid verts take their
+// sampled height; rim verts sit at the level by construction).
 function finishSurfaceAttributes(fill: ChunkFill): void {
   const surface = fill.surface;
   if (!surface || fill.surfVerts === 0) return;
@@ -436,22 +439,34 @@ function finishSurfaceAttributes(fill: ChunkFill): void {
   const ox = key.cx * CHUNK_SIZE;
   const oz = key.cz * CHUNK_SIZE;
   const level = world.theme.surface.level;
+  const step = CHUNK_SIZE / res;
+  const stride = res + 1;
   const morphEnd = lod < 2 ? LOD_RINGS[lod] + 0.5 : 0.001;
   const morphStart = lod < 2 ? morphEnd - LOD_MORPH_BAND : 0;
 
   const pos = surface.getAttribute("position") as BufferAttribute;
   const nrm = surface.getAttribute("normal") as BufferAttribute;
+  const bA = surface.getAttribute("biomeA") as BufferAttribute;
   const bB = surface.getAttribute("biomeB") as BufferAttribute;
   const mrp = surface.getAttribute("aMorph") as BufferAttribute;
   const p = pos.array as Float32Array;
   const n = nrm.array as Float32Array;
+  const a = bA.array as Float32Array;
   const b = bB.array as Float32Array;
   const m = mrp.array as Float32Array;
+  const eps = step * 0.001;
   for (let v = 0; v < fill.surfVerts; v++) {
     n[v * 3] = 0;
     n[v * 3 + 1] = 1;
     n[v * 3 + 2] = 0;
-    biomeParamsAt(ox + p[v * 3], world, biomeScratch);
+    const lx = p[v * 3];
+    const lz = p[v * 3 + 2];
+    const gi = Math.round(lx / step);
+    const gj = Math.round(lz / step);
+    const onGrid =
+      Math.abs(lx - gi * step) < eps && Math.abs(lz - gj * step) < eps;
+    a[v * 4] = onGrid ? heightsScratch[gj * stride + gi] : level;
+    biomeParamsAt(ox + lx, world, biomeScratch);
     b[v * 4] = biomeScratch.fogDensity;
     b[v * 4 + 1] = morphStart;
     b[v * 4 + 2] = morphEnd;

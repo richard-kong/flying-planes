@@ -264,3 +264,30 @@ Renderer state save/restore around each preview card runs in try/finally before 
 readback; card geometry is disposed per card and object URLs revoked on discard. Reference
 - device timing (SC-001 2 s budgets) deferred to T060-T062 owner checks — SwiftShader CPU
 rendering cannot establish them.
+
+
+## US2 verification (T039/T040)
+
+Tuning measured on a 24 km x 24 km / 200 m grid at seed 42 (T032 numbers in the test
+comments): Nature relief90-10 840->lower and roughness 119 vs Alien's 160 (0.85x bound),
+14% below-surface lakes; Arctic valley shaping floods >40% under the ice with sculpted
+ridges to 1376 m (roughness 300, p90 band seam delta bounded). Alien fixtures remain
+bit-identical through WorldContext, surfaceHeightAt (flight floor), and the PREVIEW_SEED
+card path (T033).
+
+Captures (scripts/capture-themes.ts, verification build, seed 42, SwiftShader):
+- overview-nature.png / card-nature.png: turquoise lake against pale limestone faces with
+  green foothill bands - matches N4's landform and colour relationships.
+- overview-arctic.png / card-arctic.png / turn-arctic.png: broad flat ice basin ringed by
+  sculpted snowy ridges - matches A4's glacier-basin character.
+- flight-alien.png / overview-alien.png: violet ridges, pastel dawn, gold lakes, low sun
+  disc - consistent with the First Flight baseline capture (alien-baseline-*.png).
+- chooser.png: all three cards decode real previews; selection is non-colour (badge +
+  checked radio).
+LOD seams: morph bands keep the lod transitions continuous in captured frames; planar
+water/ice surfaces sit exactly on the theme level with the depth-graded rim restored
+(vBiomeA.x carries the under-height for surface verts). Sun disc and fog follow the theme's
+sun direction through banked turns (turn-*.png).
+Deviations: preview cameras are per-theme poses (themes.ts Theme.preview) aimed at a
+lake-adjacent ridge at PREVIEW_SEED rather than the old fixed pose; Alpine-first spawn bands
+mean Nature's flight view starts over limestone/snow with green in the mid-distance.

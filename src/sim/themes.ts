@@ -123,38 +123,38 @@ const NATURE = freezeTheme({
   description: "Earth-like valleys: green forests, pale limestone, turquoise lakes",
   bands: [
     biome({
-      amplitude: 1350,
+      amplitude: 1150,
       baseFrequency: 1 / 1500,
       ridgeSharpness: 0.45,
       heightOffset: 30,
-      snowHeight: 840,
+      snowHeight: 950,
       forestTop: 460,
       forestBottom: 150,
       rockSlope: 0.72,
       fogDensity: 0.9,
     }),
     biome({
-      amplitude: 500,
+      amplitude: 420,
       baseFrequency: 1 / 950,
       ridgeSharpness: 0.12,
-      heightOffset: -40,
-      snowHeight: 500,
+      heightOffset: -60,
+      snowHeight: 600,
       forestTop: 330,
       forestBottom: 120,
       rockSlope: 0.82,
       fogDensity: 0.75,
     }),
   ],
-  shaping: Object.freeze({ warpStrength: 260, detailAmplitude: 0.05, valleyWidth: 0, valleyFlatness: 0 }),
-  surface: Object.freeze({ level: 110, kind: "water" as const }),
+  shaping: Object.freeze({ warpStrength: 260, detailAmplitude: 0.03, valleyWidth: 0, valleyFlatness: 0 }),
+  surface: Object.freeze({ level: 150, kind: "water" as const }),
   palette: Object.freeze({
     vegetation: 0x74894f,
     forest: 0x295340,
     rock: 0xc5beb0,
     snow: 0xf3f4ec,
     shoreline: 0x9aa08c,
-    lakeNear: 0x67b3b6,
-    lakeDeep: 0x267f99,
+    lakeNear: 0x93dfd0,
+    lakeDeep: 0x3aa8a4,
     forestStrength: 1,
   }),
   sky: Object.freeze({
@@ -176,8 +176,8 @@ const NATURE = freezeTheme({
     surfaceShininess: 64,
   }),
   preview: Object.freeze({
-    cameraPosition: Object.freeze([0, 1400, 3400] as [number, number, number]),
-    cameraTarget: Object.freeze([0, 350, -600] as [number, number, number]),
+    cameraPosition: Object.freeze([-1062, 470, 4282] as [number, number, number]),
+    cameraTarget: Object.freeze([-96, 150, 3872] as [number, number, number]),
   }),
 });
 
@@ -220,8 +220,8 @@ const ALIEN = freezeTheme({
     surfaceShininess: 48,
   }),
   preview: Object.freeze({
-    cameraPosition: Object.freeze([0, 1400, 3400] as [number, number, number]),
-    cameraTarget: Object.freeze([0, 350, -600] as [number, number, number]),
+    cameraPosition: Object.freeze([-2487, 470, 129] as [number, number, number]),
+    cameraTarget: Object.freeze([-3232, 120, 864] as [number, number, number]),
   }),
 });
 
@@ -234,9 +234,9 @@ const ARCTIC = freezeTheme({
   description: "Blue glacier basins, frozen lakes and sculpted snow ridges",
   bands: [
     biome({
-      amplitude: 1500,
+      amplitude: 1350,
       baseFrequency: 1 / 1250,
-      ridgeSharpness: 0.6,
+      ridgeSharpness: 0.7,
       heightOffset: 60,
       snowHeight: 240,
       forestTop: 160,
@@ -245,9 +245,9 @@ const ARCTIC = freezeTheme({
       fogDensity: 1.0,
     }),
     biome({
-      amplitude: 750,
+      amplitude: 550,
       baseFrequency: 1 / 900,
-      ridgeSharpness: 0.3,
+      ridgeSharpness: 0.2,
       heightOffset: -90,
       snowHeight: 200,
       forestTop: 140,
@@ -256,7 +256,7 @@ const ARCTIC = freezeTheme({
       fogDensity: 0.9,
     }),
   ],
-  shaping: Object.freeze({ warpStrength: 340, detailAmplitude: 0.05, valleyWidth: 0.5, valleyFlatness: 0.8 }),
+  shaping: Object.freeze({ warpStrength: 340, detailAmplitude: 0.02, valleyWidth: 0.55, valleyFlatness: 0.9 }),
   surface: Object.freeze({ level: 80, kind: "ice" as const }),
   palette: Object.freeze({
     vegetation: 0xc8dfe9,
@@ -287,8 +287,8 @@ const ARCTIC = freezeTheme({
     surfaceShininess: 24,
   }),
   preview: Object.freeze({
-    cameraPosition: Object.freeze([0, 1400, 3400] as [number, number, number]),
-    cameraTarget: Object.freeze([0, 350, -600] as [number, number, number]),
+    cameraPosition: Object.freeze([-2817, 470, 1226] as [number, number, number]),
+    cameraTarget: Object.freeze([-3552, 80, 480] as [number, number, number]),
   }),
 });
 

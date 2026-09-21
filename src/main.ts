@@ -54,6 +54,7 @@ import {
   PREVIEW_H,
   PREVIEW_W,
   renderNextPreview,
+  renderOverviewShot,
   retryFailedPreviews,
 } from "./render/previews";
 import { createChooser } from "./ui/chooser";
@@ -628,6 +629,20 @@ declare global {
 function verifyLaunchInject(themeId: ThemeId): "fail" | { delay: number } | undefined {
   if (!__VERIFY_HOOKS__) return undefined;
   return globalThis.__verifyLaunch?.(themeId);
+}
+
+// Verification build only: world counters + overview capture the browser suites and
+// capture scripts use (T034/T039/T044).
+if (__VERIFY_HOOKS__) {
+  (globalThis as { __verifyStats?: () => unknown }).__verifyStats = () => ({
+    residents: world.residentCount(),
+    queued: world.queuedCount(),
+    surfaces: world.surfaceCount(),
+    generation: world.liveGeneration,
+  });
+  (globalThis as { __verifyOverview?: (id: ThemeId, w: number, h: number) => Promise<string> })
+    .__verifyOverview = (id, w, h) =>
+    renderOverviewShot(renderer, terrainMaterial, id, w, h);
 }
 
 function frame(now: number): void {

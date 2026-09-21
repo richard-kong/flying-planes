@@ -18,7 +18,8 @@ import {
   SHORE_MASK,
 } from "../fixtures/alien";
 import { bandWeight } from "../../src/sim/biome";
-import { heightAt, normalAt, worldAlien } from "./theme-test-helpers";
+import { heightAt, normalAt, surfaceHeightAt, worldAlien } from "./theme-test-helpers";
+import { PREVIEW_SEED } from "../../src/sim/themes";
 import { WATER_LEVEL } from "../../src/constants";
 
 function height(x: number, z: number, seed: number): number {
@@ -105,5 +106,37 @@ describe("alien baseline fixtures", () => {
     // negative coordinates sit inside the main grid (x0/z0 = -10000), asserted above
     expect(GRID.x0).toBeLessThan(0);
     expect(GRID.z0).toBeLessThan(0);
+  });
+
+  // T033: the same fixed values through the flight-floor and preview sampling entrypoints —
+  // these are the paths main.ts/previews.ts actually consume, so parity must hold there too.
+  it("flight-floor sampling (surfaceHeightAt) reproduces the grid at the water level", () => {
+    const world = worldAlien(42);
+    let i = 0;
+    for (let j = 0; j < GRID.count; j++) {
+      for (let k = 0; k < GRID.count; k++) {
+        const x = GRID.x0 + k * GRID.step;
+        const z = GRID.z0 + j * GRID.step;
+        expect(surfaceHeightAt(x, z, world), `floor @ (${x}, ${z})`).toBe(
+          Math.max(GRID_HEIGHTS[42][i++], WATER_LEVEL),
+        );
+      }
+    }
+  });
+
+  it("preview-seed sampling is deterministic and diverges from fixture seeds", () => {
+    const w = worldAlien(PREVIEW_SEED);
+    let diverged = 0;
+    let n = 0;
+    for (let j = 0; j < GRID.count; j += 3) {
+      for (let k = 0; k < GRID.count; k += 3) {
+        const x = GRID.x0 + k * GRID.step;
+        const z = GRID.z0 + j * GRID.step;
+        expect(heightAt(x, z, w)).toBe(heightAt(x, z, worldAlien(PREVIEW_SEED)));
+        if (heightAt(x, z, w) !== height(x, z, 42)) diverged++;
+        n++;
+      }
+    }
+    expect(diverged / n).toBeGreaterThan(0.9);
   });
 });

@@ -55,6 +55,8 @@ export interface WorldRuntime {
   dispose(): void;
   residentCount(): number;
   queuedCount(): number;
+  /** Resident chunks currently showing a clipped water/ice sheet (verification probe). */
+  surfaceCount(): number;
   readonly liveGeneration: number;
   /** Start a deadline-sliced preparation for a world switch at the anchor. */
   beginPreparation(
@@ -286,6 +288,13 @@ export function createWorldRuntime(
 
     residentCount: () => grid.residentCount,
     queuedCount: () => toLoad.length,
+    surfaceCount: () => {
+      let n = 0;
+      residents.forEach((cx, cz, r) => {
+        if (r.surface) n++;
+      });
+      return n;
+    },
 
     beginPreparation(job, anchorX, anchorZ, heading): boolean {
       if (liveJob) return false; // exactly one live generation

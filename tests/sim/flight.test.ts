@@ -221,4 +221,39 @@ describe("stepFlight with WorldContext", () => {
       expect(s.position.y).toBeGreaterThanOrEqual(2500 + MIN_ALTITUDE_ABOVE_TERRAIN - 1e-6);
     }
   });
+
+  // T040: a scripted route per theme — determinism across reruns, clearance over the
+  // theme's surface, speed envelope, and continuous heading (no teleport/NaN).
+  it("a scripted route stays deterministic, clear of the surface, and in the speed envelope", () => {
+    for (const id of ["nature", "alien", "arctic"] as const) {
+      const world = worldOf(id, 42);
+      const runRoute = () => {
+        const s = createPlaneState(world);
+        const trace: number[] = [];
+        const script = [
+          { steerX: 0.6, steerY: -0.2, throttle: 0.9 },
+          { steerX: -0.4, steerY: 0.3, throttle: 0.3 },
+          { steerX: 0.0, steerY: 0.0, throttle: 0.5 },
+        ];
+        let step = 0;
+        for (const inp of script) {
+          const input = makeInput(inp);
+          for (let i = 0; i < 12 / SIM_DT; i++) {
+            stepFlight(s, input, SIM_DT, world);
+            const floor = surfaceHeightAt(s.position.x, s.position.z, world);
+            expect(s.position.y).toBeGreaterThanOrEqual(floor + MIN_ALTITUDE_ABOVE_TERRAIN - 1e-6);
+            expect(s.speed).toBeGreaterThanOrEqual(MIN_SPEED - 1e-9);
+            expect(s.speed).toBeLessThanOrEqual(MAX_SPEED + 1e-9);
+            trace.push(s.position.x, s.position.y, s.position.z, s.heading);
+            step++;
+          }
+        }
+        return trace;
+      };
+      const a = runRoute();
+      const b = runRoute();
+      expect(a).toEqual(b); // bit-identical across identical preparation
+      expect(a.length).toBeGreaterThan(100);
+    }
+  });
 });

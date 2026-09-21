@@ -318,3 +318,70 @@ export function disposeCardScene(res: PreviewResources): void {
   for (const g of res.geometries) g.dispose();
   res.scene.clear();
 }
+
+// --- verification-only overview capture (T039): render a theme at its preview pose into
+// a fresh w x h target and return a PNG data URL. Only reachable via __verifyOverview in
+// the verification build; dead code in production needs no budget anyway (<1 kB).
+export async function renderOverviewShot(
+  renderer: WebGLRenderer,
+  material: ShaderMaterial,
+  themeId: ThemeId,
+  w: number,
+  h: number,
+): Promise<string> {
+  const theme = themeById(themeId);
+  const target = new WebGLRenderTarget(w, h, {
+    format: RGBAFormat,
+    type: UnsignedByteType,
+    depthBuffer: true,
+    stencilBuffer: false,
+  });
+  const saved = {
+    target: renderer.getRenderTarget(),
+    toneMapping: renderer.toneMapping,
+    camPos: material.uniforms.uCamPos.value,
+    planePos: (material.uniforms.uPlanePos.value as Vector2).toArray() as [
+      number,
+      number,
+    ],
+  };
+  let res: PreviewResources | null = null;
+  try {
+    const built = buildPreviewScene(themeId, material);
+    res = built.res;
+    res.camera.aspect = w / h;
+    res.camera.updateProjectionMatrix();
+    applyThemeToMaterial(material, theme);
+    material.uniforms.uCamPos.value = res.camera.position;
+    (material.uniforms.uPlanePos.value as Vector2).set(
+      theme.preview.cameraTarget[0],
+      theme.preview.cameraTarget[2],
+    );
+    updateSkyMesh(res.sky, res.camera);
+    renderer.setRenderTarget(target);
+    renderer.toneMapping = NoToneMapping;
+    renderer.setClearColor(new Color(0), 1);
+    renderer.clear();
+    renderer.render(res.scene, res.camera);
+    const pixels = new Uint8Array(w * h * 4);
+    await renderer.readRenderTargetPixelsAsync(target, 0, 0, w, h, pixels);
+    const row = w * 4;
+    const flipped = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      flipped.set(pixels.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    }
+    for (let i = 3; i < flipped.length; i += 4) flipped[i] = 255;
+    const cnv = document.createElement("canvas");
+    cnv.width = w;
+    cnv.height = h;
+    cnv.getContext("2d")!.putImageData(new ImageData(flipped, w, h), 0, 0);
+    return cnv.toDataURL("image/png");
+  } finally {
+    if (res) disposeCardScene(res);
+    renderer.setRenderTarget(saved.target);
+    renderer.toneMapping = saved.toneMapping as typeof renderer.toneMapping;
+    material.uniforms.uCamPos.value = saved.camPos;
+    (material.uniforms.uPlanePos.value as Vector2).set(...saved.planePos);
+    target.dispose();
+  }
+}
