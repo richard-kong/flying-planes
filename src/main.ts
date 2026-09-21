@@ -421,6 +421,9 @@ function cancelOrResume(): void {
   // "restoring": invalidate the candidate job, rebuild the snapshot world
   if (liveJob) world.cancelPreparation(liveJob); // cancellation acknowledged synchronously
   liveJob = null;
+  // free the committed residency too (the veil is opaque) so the snapshot manifest
+  // provably fits the pools — every geometry in it came from them
+  world.reset();
   prepOverlay.hidden = false;
   prepOverlay.textContent = "Restoring your flight…";
   chooser.setStatus("Restoring your flight…");

@@ -340,9 +340,12 @@ export function createWorldRuntime(
           prepCursor++;
           continue;
         }
-        // a pool-exhausted fill is skipped, not fatal — the cell streams in normally
-        // after commit once geometries free, and readiness can still reach 1
         if (!fillInto(key, world, candidates)) {
+          // restores must not advance past a miss: the manifest is the contract, so a
+          // pool-exhausted key stays pending and is retried on the next slice (residents
+          // are reset before restore, so capacity is proven). Launch misses are skipped —
+          // the cell streams in after commit and readiness still reaches 1.
+          if (job.kind === "restore") break;
           prepCursor++;
           continue;
         }
