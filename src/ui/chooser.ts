@@ -4,7 +4,7 @@
 // and reports user intent back. Busy states disable Fly/Cancel/selection without trapping
 // focus; Escape acts as Cancel only when the session allows it.
 import type { ThemeId } from "../sim/themes";
-import { canCancel, isBusy, type ChooserState } from "../sim/session";
+import { cancelOffered, isBusy, type ChooserState } from "../sim/session";
 
 export interface ChooserCallbacks {
   onSelect(id: ThemeId): void;
@@ -113,9 +113,11 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
       const sel = radios.get(state.selection);
       if (sel && !sel.checked) sel.checked = true;
       flyBtn.disabled = busy;
-      cancelAllowed = canCancel(state);
+      // offered during preparing too — a mid-prep Cancel abandons the candidate and
+      // rebuilds the paused world; disabled only while the rebuild itself runs
+      cancelAllowed = cancelOffered(state);
       cancelBtn.hidden = !cancelAllowed;
-      cancelBtn.disabled = busy;
+      cancelBtn.disabled = state.phase === "restoring";
       radios.forEach((r) => {
         r.disabled = busy;
       });

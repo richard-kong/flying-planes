@@ -5,6 +5,9 @@ import {
   bootFailed,
   bootReady,
   canCancel,
+  copyAutopilot,
+  copyCameraPose,
+  copyPlaneState,
   createSession,
   isBusy,
   openChooser,
@@ -16,7 +19,11 @@ import {
   restoreReady,
   selectTheme,
   type ChooserState,
+  type FlightSnapshot,
 } from "../../src/sim/session";
+import { createPlaneState } from "../../src/sim/flight";
+import { themeById, type WorldContext } from "../../src/sim/themes";
+import { Vector3 } from "three";
 
 function fresh(seed = 42): ChooserState {
   return createSession(seed);
@@ -235,6 +242,170 @@ describe("failure paths", () => {
     const req = pressFly(s)!;
     expect(req.kind).toBe("launch");
     expect(req.themeId).toBe("nature");
+  });
+});
+
+describe("transition table (T041)", () => {
+  // every illegal mutation is rejected from every phase — the table below walks each
+  // phase and pokes the full verb set at it
+  function inPhase(p: ChooserState["phase"]): ChooserState {
+    const s = fresh(42);
+    if (p === "booting") return s;
+    bootReady(s);
+    if (p === "choosing") return s;
+    if (p === "preparing") {
+      pressFly(s);
+      return s;
+    }
+    if (p === "flying") return flying(s);
+    // restoring: fly, open chooser, launch a different theme, cancel mid-prep
+    flying(s);
+    openChooser(s);
+    selectTheme(s, "arctic");
+    pressFly(s);
+    expect(pressCancel(s)).toBe("restoring");
+    return s;
+  }
+
+  it("booting: only boot transitions succeed", () => {
+    const s = inPhase("booting");
+    expect(selectTheme(s, "alien")).toBe(false);
+    expect(pressFly(s)).toBeNull();
+    expect(pressCancel(s)).toBeNull();
+    expect(openChooser(s)).toBe(false);
+    expect(preparationReady(s, 0)).toBe(false);
+    expect(restoreReady(s, 0)).toBe(false);
+    expect(s.phase).toBe("booting");
+  });
+
+  it("choosing: select and Fly succeed; Cancel depends on a prior flight", () => {
+    const s = inPhase("choosing");
+    expect(openChooser(s)).toBe(false);
+    expect(preparationReady(s, 1)).toBe(false);
+    expect(pressCancel(s)).toBeNull(); // no snapshot yet
+    expect(selectTheme(s, "arctic")).toBe(true);
+    expect(s.selection).toBe("arctic");
+  });
+
+  it("preparing: selection locks; stale commits and Fly are rejected", () => {
+    const s = inPhase("preparing");
+    expect(selectTheme(s, "alien")).toBe(false);
+    expect(pressFly(s)).toBeNull(); // busy actions can't queue a second launch
+    expect(openChooser(s)).toBe(false);
+    expect(preparationReady(s, s.generation + 1)).toBe(false); // stale token
+    expect(restoreReady(s, s.generation)).toBe(false); // wrong transition
+    expect(s.phase).toBe("preparing");
+  });
+
+  it("flying: every menu verb is rejected until Change theme opens", () => {
+    const s = inPhase("flying");
+    expect(selectTheme(s, "alien")).toBe(false);
+    expect(pressFly(s)).toBeNull();
+    expect(pressCancel(s)).toBeNull();
+    expect(preparationReady(s, s.generation)).toBe(false);
+    expect(s.phase).toBe("flying");
+  });
+
+  it("restoring: a second Cancel, Fly, or select is rejected", () => {
+    const s = inPhase("restoring");
+    expect(pressCancel(s)).toBeNull();
+    expect(pressFly(s)).toBeNull();
+    expect(selectTheme(s, "alien")).toBe(false);
+    expect(preparationReady(s, s.generation)).toBe(false);
+    expect(s.phase).toBe("restoring");
+  });
+
+  it("every launch bumps the generation; stale tokens never commit", () => {
+    const s = readyChooser(fresh(42));
+    const g0 = s.generation;
+    const r1 = pressFly(s)!;
+    expect(r1.generation).toBe(g0 + 1);
+    preparationFailed(s, r1.generation, "boom");
+    const r2 = pressFly(s)!;
+    expect(r2.generation).toBe(g0 + 2);
+    expect(preparationReady(s, g0 + 1)).toBe(false); // dead generation
+    expect(preparationReady(s, g0 + 2)).toBe(true);
+  });
+
+  it("same-theme restart still bumps the generation and flies fresh", () => {
+    const s = flying(fresh(42), "nature");
+    openChooser(s);
+    const req = pressFly(s)!; // selection was re-selected to active
+    expect(req.themeId).toBe("nature");
+    expect(preparationReady(s, req.generation)).toBe(true);
+    expect(s.phase).toBe("flying");
+  });
+
+  it("errors preserve the selection and snapshot for retry", () => {
+    const s = flying(fresh(42), "nature");
+    openChooser(s);
+    selectTheme(s, "alien");
+    const req = pressFly(s)!;
+    expect(preparationFailed(s, req.generation, "boom")).toBe(true);
+    expect(s.error?.kind).toBe("launch");
+    expect(s.error?.themeId).toBe("alien");
+    expect(s.selection).toBe("alien"); // retained for Fly-again retry
+    expect(s.hasPriorFlight).toBe(true); // snapshot (caller-owned) still exists
+    expect(pressCancel(s)).toBe("restoring"); // prior residency was released at Fly
+  });
+});
+
+describe("FlightSnapshot helpers (T041/T045)", () => {
+  const w: WorldContext = { theme: themeById("nature"), seed: 42 };
+
+  function makeSnapshot(): FlightSnapshot {
+    return {
+      themeId: "nature",
+      seed: 42,
+      plane: createPlaneState(w),
+      prev: createPlaneState(w),
+      pose: { position: new Vector3(), target: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0) },
+      posePrev: { position: new Vector3(), target: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0) },
+      simTime: 0,
+      accumulator: 0,
+      throttle: 0.5,
+      lastInputTime: 0,
+      inputActive: false,
+      autopilot: { engaged: false, engagedAt: 0, lastSeenInputTime: -Infinity },
+      inputSeen: false,
+      hintHidden: false,
+      hintOpacity: 1,
+      chunkManifest: [],
+    };
+  }
+
+  it("snapshot writes are value copies: the live objects can be rewired without aliasing", () => {
+    const snap = makeSnapshot();
+    const live = createPlaneState(w);
+    live.position.set(1, 2, 3);
+    live.speed = 90;
+    copyPlaneState(snap.plane, live);
+    live.position.set(-9, -9, -9);
+    live.speed = 10;
+    expect(snap.plane.position.x).toBe(1);
+    expect(snap.plane.speed).toBe(90);
+    expect(snap.plane.position).not.toBe(live.position);
+  });
+
+  it("restoring writes back into live objects in place (allocated once)", () => {
+    const snap = makeSnapshot();
+    snap.plane.position.set(4, 5, 6);
+    snap.pose.position.set(7, 8, 9);
+    snap.autopilot.engaged = true;
+    snap.autopilot.engagedAt = 12;
+    const live = createPlaneState(w);
+    const livePose = { position: new Vector3(), target: new Vector3(), up: new Vector3() };
+    const liveAp = { engaged: false, engagedAt: 0, lastSeenInputTime: -Infinity };
+    copyPlaneState(live, snap.plane);
+    copyCameraPose(livePose, snap.pose);
+    copyAutopilot(liveAp, snap.autopilot);
+    expect(live.position.x).toBe(4);
+    expect(livePose.position.z).toBe(9);
+    expect(liveAp.engaged).toBe(true);
+    expect(liveAp.engagedAt).toBe(12);
+    // no aliasing the other direction either
+    snap.plane.position.x = -100;
+    expect(live.position.x).toBe(4);
   });
 });
 

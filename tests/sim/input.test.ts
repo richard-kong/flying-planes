@@ -230,3 +230,57 @@ describe("input gate", () => {
     expect(out.active).toBe(true);
   });
 });
+
+// T042 [US3]: input and throttle at Fly/Cancel boundaries. Fly and pause entry both end
+// with the gate closed; a throttle in flight is a snapshot field (restored verbatim),
+// steering is not, and a gesture spanning the boundary can never leak steering.
+describe("boundary semantics (T042)", () => {
+  it("an in-progress drag killed at a pause boundary stays dead after a fresh arm", () => {
+    const out = makeInput();
+    out.throttle = 0.8;
+    armInputGate(out);
+    touchDragToSteer(60, -40, out, 5);
+    expect(out.active).toBe(true);
+    // pause entry: terminate physical gestures
+    disarmInputGate(out);
+    inputInactive(out);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+    expect(out.throttle).toBe(0.8); // throttle is a snapshot field — preserved
+    // the same finger keeps moving: held continuations stay dropped
+    expect(passInputGate(out, "held")).toBe(false);
+    expect(out.gateArmed).toBe(false);
+    // releasing and re-touching is a fresh gesture that steers again
+    releaseInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(true);
+    touchDragToSteer(30, 0, out, 6);
+    expect(out.steerX).toBeCloseTo(30 / 160);
+    expect(out.lastInputTime).toBe(6);
+  });
+
+  it("a queued throttle change never rides across a menu boundary", () => {
+    const out = makeInput();
+    wheelToThrottle(-120, out, 3); // queued: caller applies it inside the frame
+    const queued = out.throttle;
+    disarmInputGate(out);
+    // wheel steps that arrive while closed are still events: they arm but do not steer.
+    // The caller drops the queued delta itself (hasPendingThrottle = false), so throttle
+    // stays exactly at its pre-boundary value until a fresh event.
+    expect(out.throttle).toBe(queued);
+    expect(passInputGate(out, "held")).toBe(false);
+  });
+
+  it("every Fly disarms: three launches each require a fresh first event", () => {
+    const out = makeInput();
+    for (let launch = 0; launch < 3; launch++) {
+      disarmInputGate(out);
+      expect(out.gateArmed).toBe(false);
+      expect(passInputGate(out, "held")).toBe(false); // stale drag — dead
+      expect(passInputGate(out, "discrete")).toBe(false); // dropped, arms
+      expect(out.gateArmed).toBe(true);
+      wheelToThrottle(-120, out, launch);
+      expect(out.lastInputTime).toBe(launch);
+    }
+  });
+});

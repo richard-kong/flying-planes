@@ -57,13 +57,18 @@ export interface WorldRuntime {
   queuedCount(): number;
   /** Resident chunks currently showing a clipped water/ice sheet (verification probe). */
   surfaceCount(): number;
+  /** Bounded copy of the resident keys (snapshot manifest; cap at `cap`). */
+  manifest(cap: number, out: ChunkKey[]): ChunkKey[];
   readonly liveGeneration: number;
-  /** Start a deadline-sliced preparation for a world switch at the anchor. */
+  /** Start a deadline-sliced preparation for a world switch at the anchor. When
+   * `restoreKeys` is given it replaces the priority coverage set — rebuilt Cancels
+   * restore exactly the chunks the snapshot recorded. */
   beginPreparation(
     job: PreparationJob,
     anchorX: number,
     anchorZ: number,
     heading: number,
+    restoreKeys?: readonly ChunkKey[],
   ): boolean;
   /** Continue the live job inside its deadline. Returns job.readiness. */
   stepPreparation(job: PreparationJob): number;
@@ -296,14 +301,27 @@ export function createWorldRuntime(
       return n;
     },
 
-    beginPreparation(job, anchorX, anchorZ, heading): boolean {
+    manifest(cap, out): ChunkKey[] {
+      out.length = 0;
+      residents.forEach((cx, cz, r) => {
+        if (out.length < cap) out.push({ cx, cz, lod: r.terrain.geometry.userData.lod as ChunkKey["lod"] });
+      });
+      return out;
+    },
+
+    beginPreparation(job, anchorX, anchorZ, heading, restoreKeys): boolean {
       if (liveJob) return false; // exactly one live generation
       liveJob = job;
       job.phase = "terrain";
       job.readiness = 0;
-      const cx = Math.floor(anchorX / CHUNK_SIZE);
-      const cz = Math.floor(anchorZ / CHUNK_SIZE);
-      collectPriorityKeys(cx, cz, heading, candidateKeys);
+      if (restoreKeys) {
+        candidateKeys.length = 0;
+        for (const k of restoreKeys) candidateKeys.push({ cx: k.cx, cz: k.cz, lod: k.lod });
+      } else {
+        const cx = Math.floor(anchorX / CHUNK_SIZE);
+        const cz = Math.floor(anchorZ / CHUNK_SIZE);
+        collectPriorityKeys(cx, cz, heading, candidateKeys);
+      }
       prepCursor = 0;
       prepTotal = candidateKeys.length;
       return true;

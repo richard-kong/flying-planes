@@ -291,3 +291,58 @@ sun direction through banked turns (turn-*.png).
 Deviations: preview cameras are per-theme poses (themes.ts Theme.preview) aimed at a
 lake-adjacent ridge at PREVIEW_SEED rather than the old fixed pose; Alpine-first spawn bands
 mean Nature's flight view starts over limestone/snow with green in the mid-distance.
+
+## US3 verification (T043-T055)
+
+`npm run test:browser` on the verification bundle: 33/33 passing (2026-09-20, SwiftShader).
+- switching.browser.test.ts (9): pause invariance (two probes identical while choosing),
+  snapshot resume restores position/clock/speed, active card pre-selected, focus returns
+  to Change theme, fresh-input gate re-arms before steering resumes; six directed
+  switches covering every ordered theme pair (Euler trail n->a->c->n->c->a->n); same-theme
+  Fly restarts fresh at the origin with the page Seed kept; Cancel mid-preparation
+  abandons the candidate and rebuilds the paused world (manifest reconstituted
+  identically); injected launch failure -> retry then fly; failed launch -> rebuilt
+  Cancel; duplicate busy actions rejected; resize + hidden-tab preserve phase/selection
+  across choosing/preparing/flying; a 60 s hidden pause resumes with no time replay.
+- world.browser.test.ts (3): warmed pools keep program/texture counts flat across
+  switches (geometry drift <= 8 after warm-up), restored manifests supersede resident
+  sets exactly, double-cancels/stale generations are dead letters.
+- resources.browser.test.ts (1): 50 completed switches (plus warm-up and an interleaved
+  cancel + injected-failure/retry cycle) keep the same three blob preview URLs, flat
+  texture/program counts, resident count under the pool bound, zero page errors.
+Sim side (npm test): full transition table rejects every illegal verb in every phase;
+FlightSnapshot helpers are in-place value copies; input boundaries neutralise steering
+but keep Throttle and idle history; an engaged Autopilot survives a snapshot round-trip
+and never double-engages after menu time.
+
+Allocation audit (T059, scripts/alloc-audit.ts, CDP HeapProfiler sampling at 4 KiB
+intervals over 30 s of warm max-speed streaming on SwiftShader): 37 KiB sampled total,
+~22 KiB attributable to app code (page.evaluate probes and chunked fills); the per-frame
+sim/interp path contributes nothing measurable. Tools on this VM cannot isolate GC
+pressure at device fidelity — owner traces remain the acceptance record (T061).
+
+## Rendered soak (T056)
+
+`npm run soak:rendered -- --minutes 60 --seed 42 --theme alien --headed` builds the
+verification bundle, serves it, drives the chooser (no theme URL exists), flies a
+max-speed S-route that crosses bands and LOD transitions, samples position/speed/
+residents/queue/geometry/programs plus rAF frame intervals every 10 s, writes
+soak-report.json, and exits nonzero on page errors, a stalled sim clock, or pool drift.
+
+## Owner device gates (T060-T063) — run on reference hardware
+
+Not verifiable on this VM (SwiftShader software GL). On a laptop and phone:
+1. `npm run dev` or the deployed build; throttle to 4 Mbps down / 1 Mbps up / 150 ms in
+   DevTools; five cold loads each must paint the first Nature frame and a usable
+   three-preview chooser inside 2 s.
+2. Five samples per launch / same-Theme Fly / direct Cancel / rebuilt Cancel (cancel
+   during prep): each must reach a correct controllable first frame inside 2 s.
+3. `npm run soak:rendered -- --minutes 5 --seed 42` per theme while flying each theme's
+   representative route; record frame p50/p95/p99 and heap traces; require sustained
+   60 fps laptop / 30 fps phone and zero steady-state allocations.
+4. 50 completed changes per device across all six directed pairs plus three same-theme
+   restarts with interleaved Cancel/retry/hidden-tab/rotation; record warmed memory and
+   resource counts every tenth change — require a bounded settled plateau.
+5. `npm run soak:rendered -- --minutes 60 --seed 42 --theme alien --headed` for the
+   real-time 60-minute soak, then hidden-tab/resize/orientation recovery; collect
+   continuity, precision and resource evidence at distant coordinates.

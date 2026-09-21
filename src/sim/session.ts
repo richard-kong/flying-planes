@@ -2,6 +2,10 @@
 // or preparation internals. src/ui/chooser.ts adapts DOM events; src/main.ts performs the
 // world/prep work the returned requests describe. Contracts: contracts/lifecycle.md.
 import type { ThemeId } from "./themes";
+import type { PlaneState } from "./flight";
+import type { CameraPose } from "./camera";
+import type { AutopilotState } from "./autopilot";
+import type { ChunkKey } from "./chunks";
 
 export type ChooserPhase = "booting" | "choosing" | "preparing" | "flying" | "restoring";
 export type SessionErrorKind = "startup" | "launch" | "restore";
@@ -38,6 +42,54 @@ export interface PreparationRequest {
   kind: PreparationRequestKind;
 }
 
+// --- FlightSnapshot (T045, data-model): "small, flat, and allocated once". The caller
+// creates it once and rewires it in place at every pause — nothing here holds GPU
+// resources. chunkManifest records which resident keys the paused world held so a rebuilt
+// Cancel can restore the same coverage (LOD and morph state derive from key + position).
+export interface FlightSnapshot {
+  themeId: ThemeId;
+  seed: number;
+  plane: PlaneState; // value copies — never the live objects
+  prev: PlaneState;
+  pose: CameraPose;
+  posePrev: CameraPose;
+  simTime: number;
+  accumulator: number;
+  throttle: number;
+  lastInputTime: number;
+  inputActive: boolean;
+  autopilot: AutopilotState;
+  inputSeen: boolean;
+  hintHidden: boolean;
+  /** CSS opacity at pause time — the hint fade resumes from exactly this point. */
+  hintOpacity: number;
+  chunkManifest: ChunkKey[];
+}
+
+/** Bounded manifest: the resident disc can hold ~800 chunks; a snapshot caps it. */
+export const SNAPSHOT_MANIFEST_CAP = 1024;
+
+export function copyPlaneState(out: PlaneState, src: PlaneState): void {
+  out.position.copy(src.position);
+  out.orientation.copy(src.orientation);
+  out.heading = src.heading;
+  out.pitch = src.pitch;
+  out.roll = src.roll;
+  out.speed = src.speed;
+}
+
+export function copyCameraPose(out: CameraPose, src: CameraPose): void {
+  out.position.copy(src.position);
+  out.target.copy(src.target);
+  out.up.copy(src.up);
+}
+
+export function copyAutopilot(out: AutopilotState, src: AutopilotState): void {
+  out.engaged = src.engaged;
+  out.engagedAt = src.engagedAt;
+  out.lastSeenInputTime = src.lastSeenInputTime;
+}
+
 export function createSession(seed: number): ChooserState {
   return {
     phase: "booting",
@@ -58,6 +110,15 @@ export function isBusy(s: ChooserState): boolean {
 /** Cancel is offered only when a prior Flight exists and no operation is running. */
 export function canCancel(s: ChooserState): boolean {
   return s.hasPriorFlight && s.phase === "choosing";
+}
+
+/**
+ * The UI affordance is broader than the direct path: while a preparation is live, Cancel
+ * abandons the candidate and rebuilds the paused world (T050). Booting, flying and
+ * restoring still never offer it.
+ */
+export function cancelOffered(s: ChooserState): boolean {
+  return s.hasPriorFlight && (s.phase === "choosing" || s.phase === "preparing");
 }
 
 /** All three previews decoded and the stationary background is live. */

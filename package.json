@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:browser": "vite-node scripts/test-browser.ts",
-    "size": "node scripts/size.mjs"
+    "size": "node scripts/size.mjs",
+    "soak:rendered": "vite-node scripts/soak-rendered.ts"
   },
   "dependencies": {
     "three": "^0.180.0"

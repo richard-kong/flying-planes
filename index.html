@@ -217,8 +217,12 @@
         font-size: 14px;
       }
       .chooser-busy .card input,
-      .chooser-busy #fly,
-      .chooser-busy #cancel {
+      .chooser-busy #fly {
+        pointer-events: none;
+        opacity: 0.55;
+      }
+      /* Cancel stays live while a preparation runs — it is the escape hatch (T050) */
+      .chooser-busy #cancel:disabled {
         pointer-events: none;
         opacity: 0.55;
       }
@@ -227,6 +231,8 @@
         position: fixed;
         inset: 0;
         z-index: 30;
+        /* opaque progress state, not a barrier — the chooser's live Cancel stays clickable */
+        pointer-events: none;
         background: #0d1019;
         display: flex;
         align-items: center;

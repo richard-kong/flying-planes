@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepAutopilot, createAutopilotState } from "../../src/sim/autopilot";
+import { copyAutopilot } from "../../src/sim/session";
 import { wheelToThrottle } from "../../src/sim/input";
 import { createPlaneState, stepFlight } from "../../src/sim/flight";
 import { surfaceHeightAt } from "../../src/sim/terrain";
@@ -155,5 +156,27 @@ describe("autopilot across input-gate boundaries", () => {
     input.lastInputTime = t;
     stepAutopilot(ap, input, t, SIM_DT, out);
     expect(ap.engaged).toBe(false);
+  });
+
+  it("an engaged Autopilot snapshots round-trip: restored state does not re-engage early", () => {
+    const ap = createAutopilotState();
+    const input = makeInput({ lastInputTime: 0 });
+    const out = makeSteerOut();
+    stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 1, SIM_DT, out);
+    expect(ap.engaged).toBe(true);
+    const engagedAt = ap.engagedAt;
+    // snapshot copy (same helpers main.ts uses in the FlightSnapshot)
+    const copy = { engaged: false, engagedAt: 0, lastSeenInputTime: 0 };
+    copyAutopilot(copy, ap);
+    copyAutopilot(ap, copy); // restore into the live record
+    expect(ap.engaged).toBe(true);
+    expect(ap.engagedAt).toBe(engagedAt);
+    // engaged flight continues seamlessly — no re-engagement delay, no disengage glitch
+    stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 1.5, SIM_DT, out);
+    expect(ap.engaged).toBe(true);
+    // menu time must not count: stepping at a far-future time with a stale input clock
+    // keeps the bank going rather than treating the gap as fresh activity
+    stepAutopilot(ap, input, IDLE_TO_AUTOPILOT + 60, SIM_DT, out);
+    expect(ap.engaged).toBe(true);
   });
 });

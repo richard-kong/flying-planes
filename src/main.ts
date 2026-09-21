@@ -33,6 +33,9 @@ import { initCameraPose, stepCamera, type CameraPose } from "./sim/camera";
 import { themeById, type ThemeId, type WorldContext } from "./sim/themes";
 import {
   bootReady,
+  copyAutopilot,
+  copyCameraPose,
+  copyPlaneState,
   createSession,
   openChooser,
   preparationFailed,
@@ -42,7 +45,9 @@ import {
   restoreFailed,
   restoreReady,
   selectTheme,
+  SNAPSHOT_MANIFEST_CAP,
   type ChooserState,
+  type FlightSnapshot,
 } from "./sim/session";
 import { createPlaneMesh } from "./render/plane";
 import { applyThemeToSky, createSkyMesh, updateSkyMesh } from "./render/sky";
@@ -148,79 +153,78 @@ posePrev.up.copy(pose.up);
 plane.position.copy(curr.position);
 plane.quaternion.copy(curr.orientation);
 
-// Paused-flight snapshot (T045 basic form — US3 extends it).
-interface FlightSnapshot {
-  plane: PlaneState;
-  prev: PlaneState;
-  pose: CameraPose;
-  posePrev: CameraPose;
-  simTime: number;
-  throttle: number;
-  lastInputTime: number;
-  inputSeen: boolean;
-  hintHidden: boolean;
-  themeId: ThemeId;
+// Paused-flight snapshot (T045): one fixed record, rewired in place at every pause —
+// allocated once, never holds GPU resources, and survives failed launches so a Cancel
+// can still rebuild the paused world (T051: only a successful commit discards it).
+function makeSnapshotStorage(): FlightSnapshot {
+  const w = world.world;
+  return {
+    themeId: "nature",
+    seed,
+    plane: createPlaneState(w),
+    prev: createPlaneState(w),
+    pose: { position: new Vector3(), target: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0) },
+    posePrev: { position: new Vector3(), target: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0) },
+    simTime: 0,
+    accumulator: 0,
+    throttle: 0.5,
+    lastInputTime: 0,
+    inputActive: false,
+    autopilot: { engaged: false, engagedAt: 0, lastSeenInputTime: -Infinity },
+    inputSeen: false,
+    hintHidden: false,
+    hintOpacity: 1,
+    chunkManifest: [],
+  };
 }
+const snapshotData = makeSnapshotStorage();
 let snapshot: FlightSnapshot | null = null;
 
 function takeSnapshot(): FlightSnapshot {
-  return {
-    plane: {
-      position: curr.position.clone(),
-      orientation: curr.orientation.clone(),
-      heading: curr.heading,
-      pitch: curr.pitch,
-      roll: curr.roll,
-      speed: curr.speed,
-    },
-    prev: {
-      position: prev.position.clone(),
-      orientation: prev.orientation.clone(),
-      heading: prev.heading,
-      pitch: prev.pitch,
-      roll: prev.roll,
-      speed: prev.speed,
-    },
-    pose: { position: pose.position.clone(), target: pose.target.clone(), up: pose.up.clone() },
-    posePrev: {
-      position: posePrev.position.clone(),
-      target: posePrev.target.clone(),
-      up: posePrev.up.clone(),
-    },
-    simTime,
-    throttle: input.throttle,
-    lastInputTime: input.lastInputTime,
-    inputSeen,
-    hintHidden,
-    themeId: session.active ?? "nature",
-  };
+  const s = snapshotData;
+  copyPlaneState(s.plane, curr);
+  copyPlaneState(s.prev, prev);
+  copyCameraPose(s.pose, pose);
+  copyCameraPose(s.posePrev, posePrev);
+  copyAutopilot(s.autopilot, autopilot);
+  s.simTime = simTime;
+  s.accumulator = accumulator;
+  s.throttle = input.throttle;
+  s.lastInputTime = input.lastInputTime;
+  s.inputActive = input.active;
+  s.inputSeen = inputSeen;
+  s.hintHidden = hintHidden;
+  // freeze the hint fade exactly where it is; -1 when the element is gone/measureless
+  s.hintOpacity = hintEl ? Number(getComputedStyle(hintEl).opacity) : 1;
+  s.themeId = session.active ?? "nature";
+  s.seed = session.seed;
+  world.manifest(SNAPSHOT_MANIFEST_CAP, s.chunkManifest);
+  return s;
 }
 
 function applySnapshot(s: FlightSnapshot): void {
-  curr.position.copy(s.plane.position);
-  curr.orientation.copy(s.plane.orientation);
-  curr.heading = s.plane.heading;
-  curr.pitch = s.plane.pitch;
-  curr.roll = s.plane.roll;
-  curr.speed = s.plane.speed;
-  prev.position.copy(s.prev.position);
-  prev.orientation.copy(s.prev.orientation);
-  prev.heading = s.prev.heading;
-  prev.pitch = s.prev.pitch;
-  prev.roll = s.prev.roll;
-  prev.speed = s.prev.speed;
-  pose.position.copy(s.pose.position);
-  pose.target.copy(s.pose.target);
-  pose.up.copy(s.pose.up);
-  posePrev.position.copy(s.posePrev.position);
-  posePrev.target.copy(s.posePrev.target);
-  posePrev.up.copy(s.posePrev.up);
+  copyPlaneState(curr, s.plane);
+  copyPlaneState(prev, s.prev);
+  copyCameraPose(pose, s.pose);
+  copyCameraPose(posePrev, s.posePrev);
+  copyAutopilot(autopilot, s.autopilot);
+  plane.position.copy(curr.position);
+  plane.quaternion.copy(curr.orientation);
   simTime = s.simTime;
+  accumulator = s.accumulator;
   input.throttle = s.throttle;
   input.lastInputTime = s.lastInputTime;
   inputSeen = s.inputSeen;
   hintHidden = s.hintHidden;
-  hintEl?.classList.toggle("hidden", s.hintHidden);
+  if (hintEl) {
+    hintEl.classList.toggle("hidden", s.hintHidden);
+    // resume the fade from the exact captured point, not a restarted transition
+    hintEl.style.transition = "none";
+    hintEl.style.opacity = String(s.hintOpacity);
+    void hintEl.offsetHeight; // flush the pinned style before re-enabling the transition
+    hintEl.style.transition = "";
+    if (s.hintOpacity >= 0.999) hintEl.style.opacity = "";
+  }
 }
 
 // --- Chooser DOM ---
@@ -299,6 +303,7 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
   prepOverlay.textContent = "";
   disarmInputGate(input);
   chooser.setStatus(`Preparing ${theme.name}…`);
+  syncChooser(); // phase preparing: lock controls, stamp dataset, show live Cancel
 
   // a startup retry finishes failed preview work before terrain preparation begins
   const begin = () => {
@@ -383,19 +388,6 @@ async function runPreviews(): Promise<void> {
 function cancelOrResume(): void {
   const result = pressCancel(session);
   if (result === null) return;
-  if (result === "resume") {
-    // prior terrain still resident: re-present the snapshot directly
-    const snap = snapshot;
-    if (snap) applySnapshot(snap);
-    restoreReady(session, session.generation);
-    chooser.close();
-    prepOverlay.hidden = true;
-    syncChooser();
-    return;
-  }
-  // "restoring": invalidate the candidate job, rebuild the snapshot world
-  if (liveJob) world.cancelPreparation(liveJob);
-  liveJob = null;
   const snap = snapshot;
   if (!snap) {
     // defensive: contract never offers Cancel without a prior flight
@@ -403,7 +395,28 @@ function cancelOrResume(): void {
     syncChooser();
     return;
   }
+  // a Cancel discards queued gestures and requires fresh input in the restored world
+  disarmInputGate(input);
+  inputInactive(input);
+  hasPendingThrottle = false;
+  pendingWheelDelta = null;
+  pendingPinchScale = 1;
+  pinchDist = 0;
+  if (result === "resume") {
+    // prior terrain still resident: re-present the snapshot directly — no sim step runs
+    // between restore and first painted frame
+    applySnapshot(snap);
+    restoreReady(session, session.generation);
+    syncChooser(); // unhides Change theme before close() hands it focus
+    chooser.close();
+    prepOverlay.hidden = true;
+    return;
+  }
+  // "restoring": invalidate the candidate job, rebuild the snapshot world
+  if (liveJob) world.cancelPreparation(liveJob); // cancellation acknowledged synchronously
+  liveJob = null;
   prepOverlay.hidden = false;
+  prepOverlay.textContent = "Restoring your flight…";
   chooser.setStatus("Restoring your flight…");
   const job: PreparationJob = {
     generation: session.generation,
@@ -415,13 +428,22 @@ function cancelOrResume(): void {
     readiness: 0,
     cancelled: false,
   };
-  if (!world.beginPreparation(job, snap.plane.position.x, snap.plane.position.z, snap.plane.heading)) {
+  if (
+    !world.beginPreparation(
+      job,
+      snap.plane.position.x,
+      snap.plane.position.z,
+      snap.plane.heading,
+      snap.chunkManifest,
+    )
+  ) {
     restoreFailed(session, session.generation, "could not restart the restore");
     syncChooser();
     prepOverlay.hidden = true;
     return;
   }
   liveJob = job;
+  syncChooser();
 }
 
 function retryFailed(): void {
@@ -452,14 +474,30 @@ function retryFailed(): void {
   if (req) launch(req.themeId, req.generation, req.kind);
 }
 
-// --- Change theme ---
+// --- Change theme: pause in place (T049) ---
 changeThemeBtn.addEventListener("click", () => {
   if (!openChooser(session)) return;
-  snapshot = takeSnapshot();
+  // terminate physical gestures at the boundary: a held pointer/drag/queued throttle must
+  // not be half-applied in the paused world or half-resumed on Cancel (rule 9/T050)
   disarmInputGate(input);
+  inputInactive(input);
+  hasPendingThrottle = false;
+  pendingWheelDelta = null;
+  pendingPinchScale = 1;
+  pinchDist = 0;
+  snapshot = takeSnapshot(); // captures throttle/poses/autopilot/hint fade/manifest
+  freezeHint();
   chooser.open();
   syncChooser();
 });
+
+/** Pin the hint's computed opacity so the CSS fade does not advance while paused. */
+function freezeHint(): void {
+  if (!hintEl) return;
+  const o = getComputedStyle(hintEl).opacity;
+  hintEl.style.transition = "none";
+  hintEl.style.opacity = o;
+}
 
 // --- Input: all flight listeners on the canvas, gated to the flying phase ---
 
@@ -639,7 +677,25 @@ if (__VERIFY_HOOKS__) {
     queued: world.queuedCount(),
     surfaces: world.surfaceCount(),
     generation: world.liveGeneration,
+    sessionGen: session.generation,
+    geo: renderer.info.memory.geometries,
+    tex: renderer.info.memory.textures,
+    progs: renderer.info.programs?.length ?? 0,
   });
+  (globalThis as { __verifyState?: () => unknown }).__verifyState = () => ({
+    x: curr.position.x,
+    y: curr.position.y,
+    z: curr.position.z,
+    speed: curr.speed,
+    heading: curr.heading,
+    simTime,
+    phase: session.phase,
+  });
+  (globalThis as { __verifyManifest?: () => string[] }).__verifyManifest = () =>
+    world
+      .manifest(4096, [])
+      .map((k) => `${k.cx},${k.cz},${k.lod}`)
+      .sort();
   (globalThis as { __verifyOverview?: (id: ThemeId, w: number, h: number) => Promise<string> })
     .__verifyOverview = (id, w, h) =>
     renderOverviewShot(renderer, terrainMaterial, id, w, h);
@@ -698,6 +754,8 @@ function frame(now: number): void {
         } else {
           freshFlight(world.world);
         }
+        // T051: the paused snapshot dies only when a launch/restore lands atomically
+        snapshot = null;
         accumulator = 0;
         lastNow = now;
         prepOverlay.hidden = true;
@@ -706,8 +764,8 @@ function frame(now: number): void {
         } else {
           preparationReady(session, job.generation);
         }
-        chooser.close();
         syncChooser();
+        chooser.close();
       }
     } else if (liveJob) {
       prepOverlay.textContent = `Preparing ${themeById(liveJob.themeId).name}… ${Math.floor(liveJob.readiness * 100)}%`;
@@ -746,6 +804,7 @@ function frame(now: number): void {
   camera.updateMatrixWorld();
 
   if (session.phase !== "preparing" && session.phase !== "restoring") {
+    // choosing keeps the paused world resident and streaming around its frozen pose
     world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
   }
 

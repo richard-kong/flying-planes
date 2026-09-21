@@ -92,3 +92,24 @@ The live set of Terrain Chunks kept resident around the Plane: a Euclidean disc 
 cells in `VIEW_RINGS` rings, each at a level of detail chosen by its Chebyshev ring.
 `ChunkGrid.update` diffs wanted vs resident into caller-supplied load/free lists.
 _Avoid_: tile cache, streaming map
+
+### Session
+
+**Flight Snapshot**:
+The small flat record captured once when a Flight pauses for the Theme Chooser: plane,
+previous plane, camera pose pair, sim clock, accumulator, saved Throttle/activity, Autopilot,
+hint progress and the bounded chunk manifest. It is owned by the session runtime, holds no
+GPU resources, and is discarded only when a later Fly or restore commits.
+_Avoid_: save file, checkpoint, undo state
+
+**Preparation Job**:
+The single live world build for a Fly or rebuilt Cancel, deadline-sliced across frames
+under a monotonic generation token. Candidates fill private tables and land atomically at
+commit; a stale token can never write to or free a later generation's resources.
+_Avoid_: loading task, world switch, async load
+
+**Chooser Phase**:
+The session's phase (booting, choosing, preparing, flying, restoring), mirrored to
+`body.dataset.phase`. Cancel is offered while choosing or preparing when a Flight Snapshot
+exists; it resumes directly if the paused terrain is still resident and otherwise rebuilds.
+_Avoid_: app state, screen, mode
