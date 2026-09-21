@@ -497,6 +497,7 @@ changeThemeBtn.addEventListener("click", () => {
   snapshot = takeSnapshot(); // captures throttle/poses/autopilot/hint fade/manifest
   freezeHint();
   chooser.open();
+  chooser.setStatus("Choose a world, then press Fly."); // footer shows last prep text otherwise
   syncChooser();
 });
 
@@ -777,7 +778,11 @@ function frame(now: number): void {
         chooser.close();
       }
     } else if (liveJob) {
-      prepOverlay.textContent = `Preparing ${themeById(liveJob.themeId).name}… ${Math.floor(liveJob.readiness * 100)}%`;
+      const progress = `${Math.floor(liveJob.readiness * 100)}%`;
+      prepOverlay.textContent =
+        liveJob.kind === "restore"
+          ? `Restoring your flight… ${progress}`
+          : `Preparing ${themeById(liveJob.themeId).name}… ${progress}`;
       chooser.setStatus(prepOverlay.textContent);
     }
   }

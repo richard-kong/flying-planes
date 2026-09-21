@@ -56,7 +56,9 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
   cancelBtn.addEventListener("click", () => cb.onCancel());
 
   // Escape = Cancel only when a prior flight exists; Space/Enter/arrows are native radios.
-  root.addEventListener("keydown", (e) => {
+  // Listener sits on document: when the busy state disables every control, focus falls to
+  // <body> — outside this dialog — and a chooser-scoped keydown would never see the key.
+  document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && cancelAllowed) {
       e.stopPropagation();
       cb.onCancel();
