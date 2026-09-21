@@ -11,6 +11,48 @@ export interface FlightInput {
   throttle: number; // [0, 1]
   active: boolean;
   lastInputTime: number;
+  // Fresh-input gate (002): closed at every chooser/pause boundary so a menu gesture can
+  // never steer the flight. While closed, "discrete" events are dropped but arm the gate;
+  // "held" continuations (a finger dragged in from a menu) stay dropped until release.
+  gateArmed: boolean;
+}
+
+export type GateEventKind = "discrete" | "held";
+
+/** Close the gate and neutralise steering; throttle and idle history are untouched. */
+export function disarmInputGate(input: FlightInput): void {
+  input.gateArmed = false;
+  input.steerX = 0;
+  input.steerY = 0;
+  input.active = false;
+}
+
+export function armInputGate(input: FlightInput): void {
+  input.gateArmed = true;
+}
+
+export function inputGateArmed(input: FlightInput): boolean {
+  return input.gateArmed;
+}
+
+/** A release event (pointerup/touchend-all-up/cancel/leave/blur): arms and neutralises. */
+export function releaseInputGate(input: FlightInput): void {
+  input.gateArmed = true;
+  input.steerX = 0;
+  input.steerY = 0;
+  input.active = false;
+}
+
+/**
+ * Event gate: returns true when the event may drive the steer/throttle mappers. While
+ * disarmed, discrete events are dropped but arm the gate (the next one applies); held
+ * continuations are dropped without arming so a menu-origin drag cannot steer until the
+ * finger or button releases.
+ */
+export function passInputGate(input: FlightInput, kind: GateEventKind): boolean {
+  if (input.gateArmed) return true;
+  if (kind === "discrete") input.gateArmed = true;
+  return false;
 }
 
 function clamp01(v: number): number {

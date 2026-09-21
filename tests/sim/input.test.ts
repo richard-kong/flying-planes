@@ -10,7 +10,7 @@ import {
 import { THROTTLE_STEP, TOUCH_FULL_DEFLECTION_PX } from "../../src/constants";
 
 function makeInput(): FlightInput {
-  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100 };
+  return { steerX: 0, steerY: 0, throttle: 0.5, active: false, lastInputTime: -100, gateArmed: true };
 }
 
 describe("pointerToSteer", () => {
@@ -153,5 +153,134 @@ describe("inputInactive", () => {
     expect(out.steerX).toBe(0);
     expect(out.steerY).toBe(0);
     expect(out.active).toBe(false);
+  });
+});
+
+// --- 002 T010: fresh-input gate (chooser/pause boundaries) ---
+import {
+  armInputGate,
+  disarmInputGate,
+  inputGateArmed,
+  passInputGate,
+  releaseInputGate,
+} from "../../src/sim/input";
+
+describe("input gate", () => {
+  it("disarm neutralises steering but preserves throttle and idle history", () => {
+    const out = makeInput();
+    out.steerX = 0.7;
+    out.steerY = -0.3;
+    out.throttle = 0.9;
+    out.active = true;
+    out.lastInputTime = 55;
+    disarmInputGate(out);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+    expect(out.throttle).toBe(0.9);
+    expect(out.lastInputTime).toBe(55);
+    expect(inputGateArmed(out)).toBe(false);
+  });
+
+  it("the first discrete event while disarmed is dropped but arms the gate", () => {
+    const out = makeInput();
+    disarmInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(false);
+    expect(inputGateArmed(out)).toBe(true);
+    // the next event applies normally
+    expect(passInputGate(out, "discrete")).toBe(true);
+  });
+
+  it("held continuations while disarmed are dropped without arming", () => {
+    const out = makeInput();
+    disarmInputGate(out);
+    for (const t of [10, 11, 12]) {
+      expect(passInputGate(out, "held")).toBe(false);
+      expect(inputGateArmed(out)).toBe(false);
+    }
+    // a release then arms: menu drags cannot steer until the finger lifts
+    releaseInputGate(out);
+    expect(inputGateArmed(out)).toBe(true);
+    expect(passInputGate(out, "held")).toBe(true);
+  });
+
+  it("release events while disarmed arm and neutralise", () => {
+    const out = makeInput();
+    out.steerX = 0.4;
+    disarmInputGate(out);
+    out.steerX = 0.4; // menu code could have written steer while disarmed
+    releaseInputGate(out);
+    expect(inputGateArmed(out)).toBe(true);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+  });
+
+  it("armed gate passes every event kind", () => {
+    const out = makeInput();
+    armInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(true);
+    expect(passInputGate(out, "held")).toBe(true);
+  });
+
+  it("an event at sim-time zero still counts as fresh activity", () => {
+    const out = makeInput();
+    pointerToSteer(600, 300, 800, 600, out, 0);
+    expect(out.lastInputTime).toBe(0);
+    expect(out.active).toBe(true);
+  });
+});
+
+// T042 [US3]: input and throttle at Fly/Cancel boundaries. Fly and pause entry both end
+// with the gate closed; a throttle in flight is a snapshot field (restored verbatim),
+// steering is not, and a gesture spanning the boundary can never leak steering.
+describe("boundary semantics (T042)", () => {
+  it("an in-progress drag killed at a pause boundary stays dead after a fresh arm", () => {
+    const out = makeInput();
+    out.throttle = 0.8;
+    armInputGate(out);
+    touchDragToSteer(60, -40, out, 5);
+    expect(out.active).toBe(true);
+    // pause entry: terminate physical gestures
+    disarmInputGate(out);
+    inputInactive(out);
+    expect(out.steerX).toBe(0);
+    expect(out.steerY).toBe(0);
+    expect(out.active).toBe(false);
+    expect(out.throttle).toBe(0.8); // throttle is a snapshot field — preserved
+    // the same finger keeps moving: held continuations stay dropped
+    expect(passInputGate(out, "held")).toBe(false);
+    expect(out.gateArmed).toBe(false);
+    // releasing and re-touching is a fresh gesture that steers again
+    releaseInputGate(out);
+    expect(passInputGate(out, "discrete")).toBe(true);
+    touchDragToSteer(30, 0, out, 6);
+    expect(out.steerX).toBeCloseTo(30 / 160);
+    expect(out.lastInputTime).toBe(6);
+  });
+
+  it("a queued throttle change never rides across a menu boundary", () => {
+    const out = makeInput();
+    wheelToThrottle(-120, out, 3); // queued: caller applies it inside the frame
+    const queued = out.throttle;
+    disarmInputGate(out);
+    // wheel steps that arrive while closed are still events: they arm but do not steer.
+    // The caller drops the queued delta itself (hasPendingThrottle = false), so throttle
+    // stays exactly at its pre-boundary value until a fresh event.
+    expect(out.throttle).toBe(queued);
+    expect(passInputGate(out, "held")).toBe(false);
+  });
+
+  it("every Fly disarms: three launches each require a fresh first event", () => {
+    const out = makeInput();
+    for (let launch = 0; launch < 3; launch++) {
+      disarmInputGate(out);
+      expect(out.gateArmed).toBe(false);
+      expect(passInputGate(out, "held")).toBe(false); // stale drag — dead
+      expect(passInputGate(out, "discrete")).toBe(false); // dropped, arms
+      expect(out.gateArmed).toBe(true);
+      wheelToThrottle(-120, out, launch);
+      expect(out.lastInputTime).toBe(launch);
+    }
   });
 });

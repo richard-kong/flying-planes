@@ -2,21 +2,23 @@
 // Checks floor clearance, speed bounds, and finite state across the whole flight.
 import { MAX_ACCEL, MAX_SPEED, MIN_ALTITUDE_ABOVE_TERRAIN, MIN_SPEED, SIM_DT } from "../src/constants";
 import { createPlaneState, stepFlight } from "../src/sim/flight";
-import { heightAt } from "../src/sim/terrain";
+import { surfaceHeightAt } from "../src/sim/terrain";
+import { themeById, type WorldContext } from "../src/sim/themes";
 import type { FlightInput } from "../src/sim/input";
 
 const SEED = 42;
-const input: FlightInput = { steerX: 0, steerY: 0, throttle: 1, active: true, lastInputTime: 0 };
-const s = createPlaneState(SEED);
+const input: FlightInput = { steerX: 0, steerY: 0, throttle: 1, active: true, lastInputTime: 0, gateArmed: true };
+const WORLD: WorldContext = { theme: themeById("alien"), seed: SEED };
+const s = createPlaneState(WORLD);
 s.heading = Math.PI / 2; // fly +x to cross every biome band (~120 transitions)
 const t0 = performance.now();
 let minClear = Infinity;
 let prevSpeed = s.speed;
 const steps = Math.round(3600 / SIM_DT);
 for (let i = 0; i < steps; i++) {
-  stepFlight(s, input, SIM_DT, SEED);
+  stepFlight(s, input, SIM_DT, WORLD);
   if (i % 240 === 0) {
-    const clear = s.position.y - heightAt(s.position.x, s.position.z, SEED) - MIN_ALTITUDE_ABOVE_TERRAIN;
+    const clear = s.position.y - surfaceHeightAt(s.position.x, s.position.z, WORLD) - MIN_ALTITUDE_ABOVE_TERRAIN;
     if (clear < minClear) minClear = clear;
   }
   if (!Number.isFinite(s.position.x + s.position.y + s.position.z + s.heading + s.speed)) {

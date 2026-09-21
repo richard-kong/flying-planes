@@ -1,6 +1,7 @@
-// Pastel Dawn sky (FR-022a, FR-022g): a full-screen quad drawn first, no depth interaction,
-// plus the shared skyGradient() GLSL string the terrain shader includes so fog resolves to
-// the same horizon colour (R4).
+// Theme sky (002 T016): a full-screen quad drawn first, no depth interaction, plus the
+// shared skyGradient() GLSL string the terrain shader includes so fog resolves to the same
+// horizon colour (R4). Gradient stops, sun direction and halo are Theme uniforms, staged
+// together by writeSkyUniforms / applyThemeToSky.
 import {
   Matrix4,
   Mesh,
@@ -9,40 +10,26 @@ import {
   ShaderMaterial,
   Uniform,
   Vector3,
+  Color,
 } from "three";
-import {
-  COLOR_SKY_HORIZON,
-  COLOR_SKY_MID,
-  COLOR_SKY_ZENITH,
-  COLOR_SUN_DISC,
-  COLOR_SUN_HALO,
-  SUN_DIR_X,
-  SUN_DIR_Y,
-  SUN_DIR_Z,
-} from "../constants";
-
-function hexToVec3(hex: number): string {
-  const r = ((hex >> 16) & 255) / 255;
-  const g = ((hex >> 8) & 255) / 255;
-  const b = (hex & 255) / 255;
-  return `vec3(${r.toFixed(4)}, ${g.toFixed(4)}, ${b.toFixed(4)})`;
-}
+import type { Theme } from "../sim/themes";
 
 export const SKY_GRADIENT_GLSL = `
-const vec3 SUN_DIR = vec3(${SUN_DIR_X.toFixed(6)}, ${SUN_DIR_Y.toFixed(6)}, ${SUN_DIR_Z.toFixed(6)});
-const vec3 SKY_HORIZON = ${hexToVec3(COLOR_SKY_HORIZON)};
-const vec3 SKY_MID = ${hexToVec3(COLOR_SKY_MID)};
-const vec3 SKY_ZENITH = ${hexToVec3(COLOR_SKY_ZENITH)};
-const vec3 SUN_DISC = ${hexToVec3(COLOR_SUN_DISC)};
-const vec3 SUN_HALO = ${hexToVec3(COLOR_SUN_HALO)};
+uniform vec3 uSkyHorizon;
+uniform vec3 uSkyMid;
+uniform vec3 uSkyZenith;
+uniform vec3 uSunDisc;
+uniform vec3 uSkyHalo;
+uniform vec3 uSkySunDir;
+uniform float uHaloStrength;
 
 vec3 skyGradient(vec3 dir) {
   float h = clamp(dir.y, -1.0, 1.0);
-  vec3 sky = mix(SKY_HORIZON, SKY_MID, smoothstep(0.0, 0.15, h));
-  sky = mix(sky, SKY_ZENITH, smoothstep(0.15, 0.55, h));
-  float s = max(dot(dir, SUN_DIR), 0.0);
-  sky += SUN_HALO * 0.45 * pow(s, 24.0);
-  sky += SUN_DISC * smoothstep(0.9992, 0.99975, s);
+  vec3 sky = mix(uSkyHorizon, uSkyMid, smoothstep(0.0, 0.15, h));
+  sky = mix(sky, uSkyZenith, smoothstep(0.15, 0.55, h));
+  float s = max(dot(dir, uSkySunDir), 0.0);
+  sky += uSkyHalo * uHaloStrength * pow(s, 24.0);
+  sky += uSunDisc * smoothstep(0.9992, 0.99975, s);
   return sky;
 }
 `;
@@ -71,6 +58,13 @@ export function createSkyMesh(): Mesh {
     uniforms: {
       uInvViewProj: new Uniform(new Matrix4()),
       uCamPos: new Uniform(new Vector3()),
+      uSkyHorizon: new Uniform(new Color(0xffffff)),
+      uSkyMid: new Uniform(new Color(0xffffff)),
+      uSkyZenith: new Uniform(new Color(0xffffff)),
+      uSunDisc: new Uniform(new Color(0xffffff)),
+      uSkyHalo: new Uniform(new Color(0xffffff)),
+      uSkySunDir: new Uniform(new Vector3(0, 1, 0)),
+      uHaloStrength: new Uniform(0.45),
     },
     vertexShader: SKY_VERTEX,
     fragmentShader: SKY_FRAGMENT,
@@ -81,6 +75,29 @@ export function createSkyMesh(): Mesh {
   mesh.renderOrder = -1;
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/**
+ * Write the shared sky uniforms on any material that includes SKY_GRADIENT_GLSL
+ * (the sky mesh's own ShaderMaterial or the terrain material) — same names, same values.
+ */
+export function writeSkyUniforms(
+  uniforms: Record<string, { value: unknown }>,
+  theme: Theme,
+): void {
+  (uniforms.uSkyHorizon.value as Color).setHex(theme.sky.horizon);
+  (uniforms.uSkyMid.value as Color).setHex(theme.sky.mid);
+  (uniforms.uSkyZenith.value as Color).setHex(theme.sky.zenith);
+  (uniforms.uSunDisc.value as Color).setHex(theme.sky.sunDisc);
+  (uniforms.uSkyHalo.value as Color).setHex(theme.sky.sunHalo);
+  (uniforms.uSkySunDir.value as Vector3).set(...theme.sky.sunDirection);
+  uniforms.uHaloStrength.value = theme.sky.haloStrength;
+}
+
+/** Stage the sky mesh's Theme uniforms (pair with applyThemeToMaterial for atomicity). */
+export function applyThemeToSky(mesh: Mesh, theme: Theme): void {
+  const mat = mesh.material as ShaderMaterial;
+  writeSkyUniforms(mat.uniforms, theme);
 }
 
 export function updateSkyMesh(mesh: Mesh, camera: PerspectiveCamera): void {

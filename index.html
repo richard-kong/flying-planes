@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>flying planes</title>
     <style>
       html,
@@ -10,11 +10,13 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
+        font-family: system-ui, sans-serif;
       }
       #scene {
         display: block;
         width: 100%;
         height: 100%;
+        touch-action: none;
       }
       #hint {
         position: absolute;
@@ -33,11 +35,256 @@
       #hint.hidden {
         opacity: 0;
       }
+      #change-theme {
+        position: absolute;
+        top: max(12px, env(safe-area-inset-top));
+        right: max(12px, env(safe-area-inset-right));
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: 22px;
+        background: rgba(20, 24, 38, 0.55);
+        color: #fff;
+        font: 15px/1 system-ui, sans-serif;
+        cursor: pointer;
+      }
+      #change-theme[hidden] {
+        display: none;
+      }
+
+      /* --- chooser modal --- */
+      #chooser {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 12, 22, 0.45);
+        backdrop-filter: blur(3px);
+        padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        box-sizing: border-box;
+      }
+      #chooser[hidden],
+      [hidden] {
+        display: none !important;
+      }
+      .chooser-panel {
+        background: rgba(14, 17, 30, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 22px;
+        max-width: 860px;
+        width: 100%;
+        max-height: 100%;
+        overflow-y: auto;
+        color: #eef1f8;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+      }
+      .chooser-panel h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .chooser-panel .sub {
+        margin: 0 0 18px;
+        color: #aab2c8;
+        font-size: 14px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+      @media (max-width: 700px) {
+        .cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        position: relative;
+        border: 2px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 12px;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.04);
+        min-height: 44px;
+      }
+      .card:focus-within {
+        outline: 2px solid #8fb3ff;
+        outline-offset: 2px;
+      }
+      .card input {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        width: 20px;
+        height: 20px;
+        accent-color: #8fb3ff;
+      }
+      .card img {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        border-radius: 8px;
+        background: #232838;
+        display: block;
+      }
+      .card img[data-state="failed"] {
+        display: none;
+      }
+      .card .img-fallback {
+        display: none;
+        padding: 30px 0;
+        text-align: center;
+        color: #8e97b3;
+        font-size: 13px;
+      }
+      .card .img-fallback[data-state="failed"] {
+        display: block;
+      }
+      .card .name {
+        display: block;
+        margin-top: 10px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .card .desc {
+        display: block;
+        margin-top: 4px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #b6bdd2;
+      }
+      .card .badge {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: #8fb3ff;
+        color: #101425;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 10px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .card:has(input:checked) {
+        border-color: #8fb3ff;
+        background: rgba(143, 179, 255, 0.1);
+      }
+      .card:has(input:checked) .badge {
+        opacity: 1;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .actions button {
+        min-height: 44px;
+        padding: 0 26px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #fly {
+        flex: 1;
+        background: #8fb3ff;
+        color: #101425;
+        border: 0;
+      }
+      #cancel {
+        background: transparent;
+        color: #d6dbf0;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+      #chooser-status {
+        margin-top: 14px;
+        min-height: 20px;
+        font-size: 13px;
+        color: #9aa4c0;
+      }
+      #chooser-error {
+        margin-top: 10px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(255, 96, 96, 0.14);
+        border: 1px solid rgba(255, 96, 96, 0.4);
+        color: #ffb4b4;
+        font-size: 14px;
+      }
+      .chooser-busy .card input,
+      .chooser-busy #fly {
+        pointer-events: none;
+        opacity: 0.55;
+      }
+      /* Cancel stays live while a preparation runs — it is the escape hatch (T050) */
+      .chooser-busy #cancel:disabled {
+        pointer-events: none;
+        opacity: 0.55;
+      }
+      /* opaque veil over every incomplete world (lifecycle rule 3) */
+      #prep-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        /* opaque progress state, not a barrier — the chooser's live Cancel stays clickable */
+        pointer-events: none;
+        background: #0d1019;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #cfd6ea;
+        font: 16px/1.4 system-ui, sans-serif;
+      }
     </style>
   </head>
   <body>
     <canvas id="scene"></canvas>
     <p id="hint">move to steer, scroll or pinch for speed</p>
+    <button id="change-theme" hidden>Change theme</button>
+    <div id="chooser" role="dialog" aria-modal="true" aria-labelledby="chooser-title" hidden>
+      <div class="chooser-panel">
+        <h1 id="chooser-title">Choose your world</h1>
+        <p class="sub">Pick a landscape, then press Fly.</p>
+        <div class="cards" role="radiogroup" aria-label="World">
+          <label class="card">
+            <input type="radio" name="theme" value="nature" checked />
+            <img data-theme-img="nature" alt="" />
+            <span class="img-fallback" data-theme-fallback="nature">preview unavailable</span>
+            <span class="badge" aria-hidden="true">Selected</span>
+            <span class="name">Nature</span>
+            <span class="desc">Rolling green foothills, limestone lakes and white peaks under a clear day.</span>
+          </label>
+          <label class="card">
+            <input type="radio" name="theme" value="alien" />
+            <img data-theme-img="alien" alt="" />
+            <span class="img-fallback" data-theme-fallback="alien">preview unavailable</span>
+            <span class="badge" aria-hidden="true">Selected</span>
+            <span class="name">Alien Planet</span>
+            <span class="desc">Violet ridges under a pastel dawn, with gold lakes and lavender fog.</span>
+          </label>
+          <label class="card">
+            <input type="radio" name="theme" value="arctic" />
+            <img data-theme-img="arctic" alt="" />
+            <span class="img-fallback" data-theme-fallback="arctic">preview unavailable</span>
+            <span class="badge" aria-hidden="true">Selected</span>
+            <span class="name">Arctic</span>
+            <span class="desc">Blue glacier basins, frozen lakes and sculpted snow ridges.</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="fly" type="button">Fly</button>
+          <button id="cancel" type="button" hidden>Cancel</button>
+        </div>
+        <div id="chooser-status" role="status" aria-live="polite"></div>
+        <div id="chooser-error" role="alert" hidden></div>
+      </div>
+    </div>
+    <div id="prep-overlay" hidden aria-hidden="true"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

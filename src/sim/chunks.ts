@@ -28,6 +28,8 @@ export function lodForRing(ring: number): 0 | 1 | 2 {
 export interface ChunkGrid {
   update(planeX: number, planeZ: number, toLoad: ChunkKey[], toFree: ChunkKey[]): void;
   markResident(key: ChunkKey): void;
+  /** Drop all residency — a world switch re-emits the whole disc (T008/T015). */
+  reset(): void;
   readonly residentCount: number;
 }
 
@@ -141,6 +143,7 @@ export function createChunkGrid(viewRings: number): ChunkGrid {
 
   // hoisted classify callback + context so update() allocates nothing; deletes are deferred
   // until forEach finishes (see CoordTable.forEach)
+  const residentsAll: number[] = [];
   let scanPcx = 0;
   let scanPcz = 0;
   let scanR2 = 0;
@@ -207,9 +210,21 @@ export function createChunkGrid(viewRings: number): ChunkGrid {
     residents.set(key.cx, key.cz, key.lod);
   }
 
+  function reset(): void {
+    // rebuild the table: CoordTable has no clear(), so swap in a fresh one
+    residentsAll.length = 0;
+    residents.forEach((cx, cz, lod) => {
+      residentsAll.push(cx, cz, lod);
+    });
+    for (let i = 0; i < residentsAll.length; i += 3) {
+      residents.delete(residentsAll[i], residentsAll[i + 1]);
+    }
+  }
+
   return {
     update,
     markResident,
+    reset,
     get residentCount() {
       return residents.size;
     },

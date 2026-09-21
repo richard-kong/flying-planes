@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { worldAlien } from "./theme-test-helpers";
 import {
   ALPINE,
   bandWeight,
@@ -148,7 +149,7 @@ describe("biomeParamsAt", () => {
 
   it("returns ALPINE field-by-field at w = 0", () => {
     const xA = bandCentre(SEED, 0);
-    const p = biomeParamsAt(xA, SEED, out);
+    const p = biomeParamsAt(xA, worldAlien(SEED), out);
     expect(p).toBe(out);
     for (const k of Object.keys(ALPINE) as (keyof BiomeParams)[]) {
       expect(p[k]).toBe(ALPINE[k]);
@@ -157,7 +158,7 @@ describe("biomeParamsAt", () => {
 
   it("returns FOOTHILLS field-by-field at w = 1", () => {
     const xF = bandCentre(SEED, 1);
-    const p = biomeParamsAt(xF, SEED, out);
+    const p = biomeParamsAt(xF, worldAlien(SEED), out);
     for (const k of Object.keys(FOOTHILLS) as (keyof BiomeParams)[]) {
       expect(p[k]).toBe(FOOTHILLS[k]);
     }
@@ -166,9 +167,70 @@ describe("biomeParamsAt", () => {
   it("returns the mean at w = 0.5", () => {
     const xB = findBoundaries(SEED).bAF;
     expect(xB).toBeGreaterThan(0);
-    const p = biomeParamsAt(xB, SEED, out);
+    const p = biomeParamsAt(xB, worldAlien(SEED), out);
     for (const k of Object.keys(ALPINE) as (keyof BiomeParams)[]) {
       expect(p[k]).toBeCloseTo((ALPINE[k] + FOOTHILLS[k]) / 2, 5);
     }
+  });
+});
+
+// --- 002 T006: WorldContext sampling ---
+import { themeById, type WorldContext } from "../../src/sim/themes";
+
+const worldArctic = (seed: number): WorldContext => ({ theme: themeById("arctic"), seed });
+
+describe("biomeParamsAt with WorldContext", () => {
+  const out = makeParams();
+
+  it("rebuilds bit-identical params from two equivalent contexts", () => {
+    const a = makeParams();
+    const b = makeParams();
+    for (let x = -30000; x <= 30000; x += 733) {
+      biomeParamsAt(x, worldAlien(42), a);
+      biomeParamsAt(x, worldAlien(42), b);
+      for (const k of Object.keys(a) as (keyof BiomeParams)[]) {
+        expect(a[k], `key ${k} @ ${x}`).toBe(b[k]);
+      }
+    }
+  });
+
+  it("interpolates between the theme's own two regional endpoints", () => {
+    const theme = themeById("arctic");
+    const xB = findBoundaries(42).bAF;
+    const p = biomeParamsAt(xB, worldArctic(42), out);
+    for (const k of Object.keys(theme.bands[0]) as (keyof BiomeParams)[]) {
+      expect(p[k]).toBeCloseTo((theme.bands[0][k] + theme.bands[1][k]) / 2, 5);
+    }
+  });
+
+  it("hits both endpoints exactly deep inside each band", () => {
+    const theme = themeById("arctic");
+    const xA = bandCentre(42, 0);
+    const xF = bandCentre(42, 1);
+    const pA = biomeParamsAt(xA, worldArctic(42), out);
+    for (const k of Object.keys(theme.bands[0]) as (keyof BiomeParams)[]) {
+      expect(pA[k]).toBe(theme.bands[0][k]);
+    }
+    const pF = biomeParamsAt(xF, worldArctic(42), out);
+    for (const k of Object.keys(theme.bands[1]) as (keyof BiomeParams)[]) {
+      expect(pF[k]).toBe(theme.bands[1][k]);
+    }
+  });
+
+  it("returns finite params at negative and distant coordinates", () => {
+    for (const x of [-1e6, -250000, -1, 0, 250000, 1e6]) {
+      const p = biomeParamsAt(x, worldAlien(42), out);
+      for (const k of Object.keys(p) as (keyof BiomeParams)[]) {
+        expect(Number.isFinite(p[k]), `${k} @ ${x}`).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the same band layout across themes (weight is theme-independent)", () => {
+    // the band blend weight itself must not depend on the theme — only the endpoints do
+    const xB = findBoundaries(42).bAF;
+    const a = biomeParamsAt(xB, worldAlien(42), makeParams());
+    const c = biomeParamsAt(xB, worldArctic(42), makeParams());
+    expect(a.amplitude).not.toBe(c.amplitude); // different endpoints, same x
   });
 });

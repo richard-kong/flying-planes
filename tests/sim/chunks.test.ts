@@ -210,3 +210,123 @@ describe("ChunkGrid.update", () => {
     expect(toFree).toBe(freeRef);
   });
 });
+
+// --- 002 T008: reset, signed coords, deferred exhaustion ---
+describe("ChunkGrid.reset", () => {
+  it("drops all residency so a theme switch re-emits the whole disc", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) grid.markResident(k);
+    expect(grid.residentCount).toBeGreaterThan(750);
+
+    grid.reset();
+    expect(grid.residentCount).toBe(0);
+
+    grid.update(0, 0, toLoad, toFree);
+    expect(toFree.length).toBe(0);
+    expect(toLoad.length).toBe(discAt(0, 0).size);
+  });
+
+  it("reset at a moved position re-emits that disc and stays bounded", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) grid.markResident(k);
+    grid.reset();
+    grid.update(-37 * CHUNK_SIZE, 11 * CHUNK_SIZE, toLoad, toFree);
+    const wanted = discAt(-37, 11);
+    expect(toLoad.length).toBe(wanted.size);
+    for (const k of toLoad) {
+      expect(wanted.get(`${k.cx},${k.cz}`)).toBe(k.lod);
+    }
+  });
+});
+
+describe("ChunkGrid signed and far coordinates", () => {
+  it("handles negative chunk coords without aliasing", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(-5 * CHUNK_SIZE - 1, 3 * CHUNK_SIZE, toLoad, toFree);
+    const wanted = discAt(-6, 3); // floor(-5.004) = -6
+    expect(toLoad.length).toBe(wanted.size);
+    for (const k of toLoad) expect(wanted.get(`${k.cx},${k.cz}`)).toBe(k.lod);
+  });
+
+  it("a far teleport frees the old disc entirely and queues the new one", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) grid.markResident(k);
+    grid.update(500 * CHUNK_SIZE, -500 * CHUNK_SIZE, toLoad, toFree);
+    expect(toFree.length).toBe(discAt(0, 0).size);
+    expect(toLoad.length).toBe(discAt(500, -500).size);
+    expect(grid.residentCount).toBe(0);
+  });
+
+  it("diagonal and mixed-axis movement diffs correctly", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) grid.markResident(k);
+    grid.update(-2 * CHUNK_SIZE, 3 * CHUNK_SIZE, toLoad, toFree);
+    const oldDisc = discAt(0, 0);
+    const newDisc = discAt(-2, 3);
+    const loadSet = new Set(toLoad.map((k) => `${k.cx},${k.cz}`));
+    const freeSet = new Set(toFree.map((k) => `${k.cx},${k.cz}`));
+    const expectLoad = new Set<string>();
+    const expectFree = new Set<string>();
+    for (const [k, lod] of newDisc) {
+      if (!oldDisc.has(k) || oldDisc.get(k) !== lod) expectLoad.add(k);
+    }
+    for (const [k] of oldDisc) {
+      if (!newDisc.has(k)) expectFree.add(k);
+    }
+    expect(loadSet).toEqual(expectLoad);
+    expect(freeSet).toEqual(expectFree);
+  });
+
+  it("repeated boundary crossings never grow the resident table unboundedly", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    grid.update(0, 0, toLoad, toFree);
+    for (const k of toLoad) grid.markResident(k);
+    let maxResident = grid.residentCount;
+    for (let i = 1; i <= 60; i++) {
+      // oscillate across a chunk boundary to churn loads/frees
+      const x = (i % 2 === 0 ? 0 : 1) * CHUNK_SIZE + i * 3;
+      grid.update(x, 0, toLoad, toFree);
+      for (const k of toLoad) grid.markResident(k);
+      maxResident = Math.max(maxResident, grid.residentCount);
+    }
+    expect(maxResident).toBeLessThanOrEqual(discAt(0, 0).size + R * 8);
+  });
+
+  it("an exhausted fill budget defers leftovers to later frames", () => {
+    const grid = createChunkGrid(VIEW_RINGS);
+    const toLoad: ChunkKey[] = [];
+    const toFree: ChunkKey[] = [];
+    const BUDGET = 2;
+    const resident = new Set<string>();
+    grid.update(0, 0, toLoad, toFree);
+    // fill nothing — next frame must still see every wanted chunk pending
+    grid.update(0, 0, toLoad, toFree);
+    expect(toLoad.length).toBe(discAt(0, 0).size);
+    // now drip-feed: each frame fills at most BUDGET
+    for (let frame = 0; frame < 1000 && toLoad.length > 0; frame++) {
+      for (let i = 0; i < toLoad.length && i < BUDGET; i++) {
+        grid.markResident(toLoad[i]);
+        resident.add(`${toLoad[i].cx},${toLoad[i].cz}`);
+      }
+      grid.update(0, 0, toLoad, toFree);
+    }
+    expect(resident.size).toBe(discAt(0, 0).size);
+    expect(toLoad.length).toBe(0);
+  });
+});
