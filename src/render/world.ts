@@ -267,11 +267,13 @@ export function createWorldRuntime(
       for (let i = 0; i < toFree.length; i++) {
         releaseResident(toFree[i].cx, toFree[i].cz);
       }
-      for (let i = 0; i < toLoad.length && i < budget; i++) {
+      let filled = 0;
+      for (let i = 0; i < toLoad.length && filled < budget; i++) {
         // pool exhaustion skips a chunk rather than stalling the queue: it stays wanted,
         // is re-emitted by the next grid.update, and fills once a geometry frees
         if (!fillInto(toLoad[i], world, residents)) continue;
         grid.markResident(toLoad[i]);
+        filled++;
       }
     },
 
