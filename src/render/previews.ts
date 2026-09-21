@@ -155,6 +155,7 @@ async function renderCard(
   renderer: WebGLRenderer,
   material: ShaderMaterial,
   target: WebGLRenderTarget,
+  restoreMaterial: () => void,
 ): Promise<void> {
   const theme = themeById(card.themeId);
   const gen = set.generation;
@@ -211,6 +212,9 @@ async function renderCard(
     renderer.setClearColor(saved.clearColor, saved.clearAlpha);
     material.uniforms.uCamPos.value = saved.camPos;
     (material.uniforms.uPlanePos.value as Vector2).set(...saved.planePos);
+    // the card theme stained the SHARED material — repaint the live world's uniforms
+    // before the next frame, or the background renders in the last card's palette
+    restoreMaterial();
   }
 
   const pixels = new Uint8Array(PREVIEW_W * PREVIEW_H * 4);
@@ -268,6 +272,7 @@ export async function renderNextPreview(
   renderer: WebGLRenderer,
   material: ShaderMaterial,
   target: WebGLRenderTarget,
+  restoreMaterial: () => void,
 ): Promise<boolean> {
   const card = set.cards.find((c) => c.status !== "ready");
   if (!card) {
@@ -275,7 +280,7 @@ export async function renderNextPreview(
     return false;
   }
   try {
-    await renderCard(set, card, renderer, material, target);
+    await renderCard(set, card, renderer, material, target, restoreMaterial);
   } catch (e) {
     card.status = "failed";
     if (card.url) {
@@ -293,11 +298,12 @@ export async function retryFailedPreviews(
   renderer: WebGLRenderer,
   material: ShaderMaterial,
   target: WebGLRenderTarget,
+  restoreMaterial: () => void,
 ): Promise<void> {
   for (const card of set.cards) {
     if (card.status === "failed") {
       card.status = "pending";
-      await renderNextPreview(set, renderer, material, target);
+      await renderNextPreview(set, renderer, material, target, restoreMaterial);
     }
   }
 }
@@ -328,6 +334,7 @@ export async function renderOverviewShot(
   themeId: ThemeId,
   w: number,
   h: number,
+  restoreMaterial: () => void,
 ): Promise<string> {
   const theme = themeById(themeId);
   const target = new WebGLRenderTarget(w, h, {
@@ -382,6 +389,7 @@ export async function renderOverviewShot(
     renderer.toneMapping = saved.toneMapping as typeof renderer.toneMapping;
     material.uniforms.uCamPos.value = saved.camPos;
     (material.uniforms.uPlanePos.value as Vector2).set(...saved.planePos);
+    restoreMaterial(); // repaint live-world theme uniforms on the shared material
     target.dispose();
   }
 }

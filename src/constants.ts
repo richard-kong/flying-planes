@@ -14,8 +14,9 @@ export const LOD_RESOLUTIONS: readonly number[] = [64, 32, 16];
 export const CHUNKS_PER_FRAME = 2;
 export const POOL_PER_LOD: readonly number[] = [32, 240, 680];
 // clipped surface geometries per lod (002): lazily constructed, bounded — a pool miss
-// defers the chunk's fill rather than growing buffers mid-flight
-export const SURF_POOL_PER_LOD: readonly number[] = [24, 96, 192];
+// defers the chunk's fill rather than growing buffers mid-flight. lod0 covers the full
+// 25-cell inner ring plus an in-flight margin so a flooded center never stalls.
+export const SURF_POOL_PER_LOD: readonly number[] = [26, 96, 192];
 // chunk units: how far inside a lod band's outer edge vertices morph toward the
 // next-coarser sampling (hides the lod swap, T056)
 export const LOD_MORPH_BAND = 1.5;

@@ -268,7 +268,9 @@ export function createWorldRuntime(
         releaseResident(toFree[i].cx, toFree[i].cz);
       }
       for (let i = 0; i < toLoad.length && i < budget; i++) {
-        if (!fillInto(toLoad[i], world, residents)) break;
+        // pool exhaustion skips a chunk rather than stalling the queue: it stays wanted,
+        // is re-emitted by the next grid.update, and fills once a geometry frees
+        if (!fillInto(toLoad[i], world, residents)) continue;
         grid.markResident(toLoad[i]);
       }
     },
@@ -338,7 +340,12 @@ export function createWorldRuntime(
           prepCursor++;
           continue;
         }
-        if (!fillInto(key, world, candidates)) break;
+        // a pool-exhausted fill is skipped, not fatal — the cell streams in normally
+        // after commit once geometries free, and readiness can still reach 1
+        if (!fillInto(key, world, candidates)) {
+          prepCursor++;
+          continue;
+        }
         prepCursor++;
         if (performance.now() - t0 >= budget) break;
       }

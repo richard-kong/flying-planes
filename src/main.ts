@@ -103,6 +103,11 @@ applyThemeToMaterial(terrainMaterial, bootWorld.theme);
 applyThemeToSky(sky, bootWorld.theme);
 const world = createWorldRuntime(scene, terrainMaterial, bootWorld);
 
+// Preview card renders stage their theme on the SHARED terrain material; this puts the
+// live world's uniforms back afterwards (the current world's theme, whatever it is).
+const restoreLiveTheme = (): void =>
+  applyThemeToMaterial(terrainMaterial, world.world.theme);
+
 // --- Input state (preallocated; only the handlers below write it) ---
 const input: FlightInput = {
   steerX: 0,
@@ -282,6 +287,7 @@ function freshFlight(w: WorldContext): void {
   input.steerY = 0;
   input.active = false;
   input.throttle = 0.5;
+  input.lastInputTime = 0; // new flight, new clock — a stale timestamp would skew Autopilot idle
   disarmInputGate(input); // first flight event after launch must be fresh (rule 10)
   hasPendingThrottle = false;
   pendingWheelDelta = null;
@@ -329,7 +335,7 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
   if (kind === "startup" && previewSet.cards.some((c) => c.status === "failed")) {
     void (async () => {
       try {
-        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget);
+        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
       } catch {
         // card-level failure is non-fatal for launch; retry stays available
       }
@@ -355,7 +361,7 @@ let previewsStarted = false;
 async function runPreviews(): Promise<void> {
   for (let i = 0; i < previewSet.cards.length; i++) {
     try {
-      await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget);
+      await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
     } catch {
       // renderNextPreview marks the card failed itself; keep pumping
     }
@@ -450,7 +456,7 @@ function retryFailed(): void {
   if (session.error?.kind === "startup") {
     void (async () => {
       try {
-        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget);
+        await retryFailedPreviews(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
       } catch {
         /* per-card status already set */
       }
@@ -698,7 +704,7 @@ if (__VERIFY_HOOKS__) {
       .sort();
   (globalThis as { __verifyOverview?: (id: ThemeId, w: number, h: number) => Promise<string> })
     .__verifyOverview = (id, w, h) =>
-    renderOverviewShot(renderer, terrainMaterial, id, w, h);
+    renderOverviewShot(renderer, terrainMaterial, id, w, h, restoreLiveTheme);
 }
 
 function frame(now: number): void {
