@@ -317,3 +317,7 @@ These are authoring groups, not permission to run competing workloads during per
 - Coverage maps all 24 functional requirements, 7 success criteria, entities and internal contracts.
 - All design documents were read; before/after task extension hooks are absent in this checkout.
 - Runtime implementation and acceptance results remain pending; no task is completed by generation.
+
+## Post-implementation regression: stable terrain
+
+- [X] T065 [US2] Reproduce history-dependent terrain heights in `tests/render/terrainMesh.test.ts` before fixing `src/render/terrainMesh.ts`; require identical heights after unrelated chunks and Themes fill the shared scratch grid, plus correct coarse-triangle midpoint heights, across all three Themes, all LODs, and single-row/whole-chunk fills. Under FR-010, wait for both sampled height rows before computing detail-transition targets. The initial Nature Seed 42 regression failed with 257.54 m of height drift and passed after correcting the skirt-row offset.

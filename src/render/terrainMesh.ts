@@ -488,12 +488,11 @@ export function stepChunkFill(fill: ChunkFill, rowBudget: number): boolean {
   while (remaining > 0 && !fill.done) {
     if (fill.row < side) {
       fillGridRow(fill);
-      // morph row m uses coarse samples at z0 and z1 = min(z0+2, res); heights are final
-      // through min(fill.row - 1, res), so advance while z1 is covered
+      // Row 0 is the skirt; completed interior samples end at row - 2.
       while (fill.morphRow < side) {
         const gj = Math.min(Math.max(fill.morphRow - 1, 0), res);
         const z1 = Math.min(gj - (gj % 2) + 2, res);
-        if (z1 > Math.min(fill.row - 1, res)) break;
+        if (z1 > Math.min(fill.row - 2, res)) break;
         fillMorphRow(fill);
       }
       remaining--;
