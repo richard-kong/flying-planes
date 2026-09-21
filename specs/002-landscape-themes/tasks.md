@@ -267,7 +267,7 @@ These are authoring groups, not permission to run competing workloads during per
 | FR-007 | T006, T032, T035, T038–T040 |
 | FR-008 | T001, T011, T012, T016, T033, T037, T039 |
 | FR-009 | T006, T009, T014, T032, T036, T039 |
-| FR-010 | T006, T008, T009, T012, T014, T015, T032, T040, T065, T066 |
+| FR-010 | T006, T008, T009, T012, T014, T015, T032, T040, T065, T066, T067 |
 | FR-011 | T005, T019, T020, T023, T040, T051 |
 | FR-012 | T007, T010, T013, T018, T040 |
 | FR-013 | T041, T045, T046, T048, T049 |
@@ -322,3 +322,4 @@ These are authoring groups, not permission to run competing workloads during per
 
 - [X] T065 [US2] Reproduce history-dependent terrain heights in `tests/render/terrainMesh.test.ts` before fixing `src/render/terrainMesh.ts`; require identical heights after unrelated chunks and Themes fill the shared scratch grid, plus correct coarse-triangle midpoint heights, across all three Themes, all LODs, and single-row/whole-chunk fills. Under FR-010, wait for both sampled height rows before computing detail-transition targets. The initial Nature Seed 42 regression failed with 257.54 m of height drift and passed after correcting the skirt-row offset.
 - [X] T066 [US2] Reproduce disappearing nearby terrain during sustained diagonal flight in `tests/render/worldStreaming.test.ts` before fixing `src/render/world.ts`; count successful chunk fills against the per-frame budget so an exhausted LOD pool cannot starve loadable replacements later in the queue. The initial Nature Seed 42 regression lost all 25 nearby chunks after 54 seconds and retained all 25 after the correction.
+- [X] T067 [US2] Reproduce permanently missing Arctic terrain around `(3306, 4783)` at Seed 42 in `tests/render/worldStreaming.test.ts`; require complete view coverage at the correct LODs after diagonal movement in every Theme. Match the lazy surface geometry and mesh limits to their terrain counterparts in `src/constants.ts` and `src/render/world.ts`, since every resident chunk may need water or ice. Before correction, 193 chunks remained queued even with an ample fill budget; afterward all 797 chunks become resident and the queue drains.
