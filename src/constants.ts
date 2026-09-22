@@ -16,7 +16,7 @@ export const POOL_PER_LOD: readonly number[] = [32, 240, 680];
 // Water/ice geometry is lazy and only needs to cover the resident view plus replacements.
 // Per-LOD limits match each band's maximum occupancy in the 16-ring view, with headroom for
 // LOD swaps; their sum is bounded by the resident mesh cap rather than all terrain pool slots.
-export const SURF_POOL_PER_LOD: readonly number[] = [32, 180, 620];
+export const SURF_POOL_PER_LOD: readonly number[] = [32, 208, 592];
 // chunk units: how far inside a lod band's outer edge vertices morph toward the
 // next-coarser sampling (hides the lod swap, T056)
 export const LOD_MORPH_BAND = 1.5;
