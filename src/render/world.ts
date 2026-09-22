@@ -127,7 +127,6 @@ export function createWorldRuntime(
 
   // --- freelists, bounded ---
   const MAX_RESIDENT_MESHES = 832; // full 16-ring disc plus in-flight fills
-  const MAX_SURFACE_MESHES = 384;
   const freeTerrain: Mesh[] = [];
   const freeSurface: Mesh[] = [];
   let terrainMade = 0;
@@ -152,7 +151,7 @@ export function createWorldRuntime(
   function acquireSurfaceMesh(): Mesh | undefined {
     const m = freeSurface.pop();
     if (m) return m;
-    if (surfaceMade >= MAX_SURFACE_MESHES) return undefined;
+    if (surfaceMade >= MAX_RESIDENT_MESHES) return undefined;
     surfaceMade++;
     return newMesh();
   }
@@ -267,11 +266,13 @@ export function createWorldRuntime(
       for (let i = 0; i < toFree.length; i++) {
         releaseResident(toFree[i].cx, toFree[i].cz);
       }
-      for (let i = 0; i < toLoad.length && i < budget; i++) {
+      let filled = 0;
+      for (let i = 0; i < toLoad.length && filled < budget; i++) {
         // pool exhaustion skips a chunk rather than stalling the queue: it stays wanted,
         // is re-emitted by the next grid.update, and fills once a geometry frees
         if (!fillInto(toLoad[i], world, residents)) continue;
         grid.markResident(toLoad[i]);
+        filled++;
       }
     },
 

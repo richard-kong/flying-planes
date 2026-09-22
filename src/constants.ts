@@ -13,10 +13,10 @@ export const LOD_RINGS: readonly number[] = [2, 7, 16];
 export const LOD_RESOLUTIONS: readonly number[] = [64, 32, 16];
 export const CHUNKS_PER_FRAME = 2;
 export const POOL_PER_LOD: readonly number[] = [32, 240, 680];
-// clipped surface geometries per lod (002): lazily constructed, bounded — a pool miss
-// defers the chunk's fill rather than growing buffers mid-flight. lod0 covers the full
-// 25-cell inner ring plus an in-flight margin so a flooded center never stalls.
-export const SURF_POOL_PER_LOD: readonly number[] = [26, 96, 192];
+// Water/ice geometry is lazy and only needs to cover the resident view plus replacements.
+// Per-LOD limits match each band's maximum occupancy in the 16-ring view, with headroom for
+// LOD swaps; their sum is bounded by the resident mesh cap rather than all terrain pool slots.
+export const SURF_POOL_PER_LOD: readonly number[] = [32, 180, 620];
 // chunk units: how far inside a lod band's outer edge vertices morph toward the
 // next-coarser sampling (hides the lod swap, T056)
 export const LOD_MORPH_BAND = 1.5;

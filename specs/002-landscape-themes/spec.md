@@ -211,7 +211,9 @@ Repeat and press Fly instead. Verify resume and restart are different actions.
   temperate forest/vegetation look; its valley and ridge shapes MUST differ from the other Themes.
 - **FR-010**: All Themes MUST remain procedural, endless, and deterministic. The same Theme
   and Seed MUST reproduce terrain, regional layout, and water or ice locations. Regional
-  transitions MUST remain gradual and free of visible gaps or seams.
+  transitions MUST remain gradual and free of visible gaps or seams. Streaming and detail
+  transitions MUST NOT cause terrain to grow into transient spires or collapse; rendered
+  heights MUST remain consistent with the same Theme, Seed, and world coordinates.
 - **FR-011**: Seed parsing and the existing `?seed=` behaviour MUST remain compatible with
   First Flight. One Seed MUST be retained across Theme changes and restarts within the page
   visit. Reproducibility across Themes is defined by the pair of Theme and Seed.
