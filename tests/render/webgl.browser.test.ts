@@ -6,7 +6,9 @@
 // (constitution III).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Browser, Page } from "playwright";
-import { launchChromium } from "../../scripts/browser-harness";
+import { createServer, type ViteDevServer } from "vite";
+import { freePort, launchChromium } from "../../scripts/browser-harness";
+import { AIRCRAFT, PLANE_FOOTPRINT } from "../../src/sim/aircraft";
 
 const BASE = process.env.BROWSER_BASE_URL ?? "http://127.0.0.1:0";
 
@@ -130,4 +132,146 @@ describe("webgl smoke", () => {
       120_000,
     );
   }
+});
+
+interface AircraftFrame {
+  dominant: number;
+  pixels: number;
+  spinners: string[];
+}
+
+// 003 T007: the verification bundle does not include the aircraft module, so this mounts
+// buildAircraft through a vite dev server instead — every group plus the shared lighting
+// rig renders one frame on a flat background, and the scaled world-bbox dominant axis
+// (rotor disc included) must land on PLANE_FOOTPRINT.
+describe("aircraft render smoke", () => {
+  let dev: ViteDevServer | null = null;
+  let devPage: Page | null = null;
+  let devBase = "";
+  const devErrors: string[] = [];
+
+  beforeAll(async () => {
+    const port = await freePort();
+    dev = await createServer({
+      server: { port, strictPort: true },
+      logLevel: "error",
+    });
+    await dev.listen();
+    devBase = `http://127.0.0.1:${port}`;
+    devPage = await browser!.newPage({ viewport: { width: 640, height: 360 } });
+    devPage.on("pageerror", (err) => devErrors.push(String(err)));
+  }, 120_000);
+
+  afterAll(async () => {
+    await devPage?.close();
+    await dev?.close();
+  });
+
+  it(
+    "renders every aircraft type at the shared PLANE_FOOTPRINT without page errors",
+    async () => {
+      await devPage!.goto(`${devBase}/`, { waitUntil: "domcontentloaded" });
+      // vite-node rewrites import() inside evaluate, so the modules are loaded by an
+      // injected module script on the dev-server origin instead
+      await devPage!.addScriptTag({
+        type: "module",
+        content: `window.__kit = Promise.all([
+          import("/node_modules/.vite/deps/three.js"),
+          import("/src/render/aircraft.ts"),
+          import("/src/sim/aircraft.ts"),
+          import("/src/sim/themes.ts"),
+        ]).then(([THREE, M, S, T]) => ({ THREE, M, S, T }))`,
+      });
+      await devPage!.waitForFunction(
+        () => (globalThis as { __kit?: unknown }).__kit !== undefined,
+      );
+      const stats = await devPage!.evaluate(async (ids) => {
+        const { THREE, M, S, T } = (await (
+          globalThis as { __kit?: Promise<unknown> }
+        ).__kit!) as {
+          THREE: typeof import("three");
+          M: typeof import("../../src/render/aircraft");
+          S: typeof import("../../src/sim/aircraft");
+          T: typeof import("../../src/sim/themes");
+        };
+        const W = 640;
+        const H = 360;
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          preserveDrawingBuffer: true,
+        });
+        renderer.setSize(W, H, false);
+        renderer.setClearColor(0x101418, 1);
+        const scene = new THREE.Scene();
+        const lights = M.createAircraftLights();
+        M.applyThemeToLights(lights, T.themeById("nature"));
+        scene.add(lights.hemi, lights.sun);
+        const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 2000);
+        const probe = document.createElement("canvas");
+        probe.width = W;
+        probe.height = H;
+        const ctx = probe.getContext("2d")!;
+        const bg = new THREE.Color(0x101418);
+        const bgRgb = [
+          Math.round(bg.r * 255),
+          Math.round(bg.g * 255),
+          Math.round(bg.b * 255),
+        ];
+        const out: AircraftFrame[] = [];
+        for (const id of ids) {
+          const a = M.buildAircraft(S.aircraftById(id));
+          scene.add(a.group);
+          a.group.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(a.group);
+          const size = box.getSize(new THREE.Vector3());
+          const dominant = Math.max(size.x, size.z);
+          const sphere = box.getBoundingSphere(new THREE.Sphere());
+          const dist =
+            (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 0.92;
+          camera.position
+            .set(-0.6, 0.34, 0.72)
+            .normalize()
+            .multiplyScalar(dist)
+            .add(new THREE.Vector3(0, 0.1, 0.2));
+          camera.lookAt(0, 0.1, 0.2);
+          renderer.render(scene, camera);
+          ctx.drawImage(canvas, 0, 0);
+          const d = ctx.getImageData(0, 0, W, H).data;
+          let pixels = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i] !== bgRgb[0] || d[i + 1] !== bgRgb[1] || d[i + 2] !== bgRgb[2]) {
+              pixels++;
+            }
+          }
+          out.push({
+            dominant,
+            pixels,
+            spinners: a.spinners.map((s) => String(s.userData.spinner)),
+          });
+          scene.remove(a.group);
+          M.disposeAircraft(a);
+        }
+        renderer.dispose();
+        return out;
+      }, AIRCRAFT.map((a) => a.id));
+
+      expect(devErrors).toEqual([]);
+      expect(stats).toHaveLength(AIRCRAFT.length);
+      for (const [i, type] of AIRCRAFT.entries()) {
+        const s = stats[i];
+        // scaled world bbox dominant axis (x or z, rotor disc included) == PLANE_FOOTPRINT ±2%
+        expect(
+          Math.abs(s.dominant - PLANE_FOOTPRINT) / PLANE_FOOTPRINT,
+          `${type.id} dominant axis ${s.dominant}`,
+        ).toBeLessThanOrEqual(0.02);
+        expect(s.pixels, `${type.id} drew no aircraft pixels`).toBeGreaterThan(0);
+        expect(s.spinners).toEqual(type.spinners.map((sp) => sp.name));
+      }
+    },
+    120_000,
+  );
 });
