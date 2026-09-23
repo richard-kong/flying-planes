@@ -99,9 +99,16 @@ describe("aircraft selection", () => {
       await gotoAndWaitChooser(page, SEEDED);
       await flyTheme(page, "nature");
       const before = (await probeAircraft(page))?.spinPhase;
-      await page.waitForTimeout(500);
-      const after = (await probeAircraft(page))?.spinPhase;
       expect(before).toBeDefined();
+      // wait on the phase itself, not wall time — rAF can stall under load
+      await page.waitForFunction(
+        (b) =>
+          (window as unknown as { __verifyAircraft?: () => AircraftProbe })
+            .__verifyAircraft?.().spinPhase !== b,
+        before,
+        { timeout: 120_000 },
+      );
+      const after = (await probeAircraft(page))?.spinPhase;
       expect(after).toBeDefined();
       expect(phaseDelta(before ?? 0, after ?? 0)).toBeGreaterThan(0);
     } finally {
@@ -124,9 +131,15 @@ describe("aircraft selection", () => {
         { timeout: 120_000 },
       );
       const before = (await probeAircraft(page))?.spinPhase;
-      await page.waitForTimeout(500);
-      const after = (await probeAircraft(page))?.spinPhase;
       expect(before).toBeDefined();
+      await page.waitForFunction(
+        (b) =>
+          (window as unknown as { __verifyAircraft?: () => AircraftProbe })
+            .__verifyAircraft?.().spinPhase !== b,
+        before,
+        { timeout: 120_000 },
+      );
+      const after = (await probeAircraft(page))?.spinPhase;
       expect(after).toBeDefined();
       expect(phaseDelta(before ?? 0, after ?? 0)).toBeGreaterThan(0);
     } finally {

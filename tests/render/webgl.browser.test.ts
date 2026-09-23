@@ -159,9 +159,10 @@ describe("aircraft render smoke", () => {
     });
     await dev.listen();
     devBase = `http://127.0.0.1:${port}`;
-    // cold dep cache (CI): the optimizer bundles three asynchronously — the injected
-    // imports 404 until it finishes, so wait for the deps URL to exist
-    const depsDeadline = Date.now() + 60_000;
+    // cold dep cache (CI): force a transform so the optimizer discovers `three`,
+    // then wait for the deps URL to exist — the page's injected imports 404 until it does
+    await fetch(`${devBase}/src/render/aircraft.ts`);
+    const depsDeadline = Date.now() + 240_000;
     for (;;) {
       const res = await fetch(`${devBase}/node_modules/.vite/deps/three.js`);
       if (res.ok) break;
@@ -170,7 +171,7 @@ describe("aircraft render smoke", () => {
     }
     devPage = await browser!.newPage({ viewport: { width: 640, height: 360 } });
     devPage.on("pageerror", (err) => devErrors.push(String(err)));
-  }, 120_000);
+  }, 300_000);
 
   afterAll(async () => {
     await devPage?.close();
