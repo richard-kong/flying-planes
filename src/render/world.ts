@@ -9,6 +9,7 @@
 // another generation starts. The shared ChunkGrid never learns about uncommitted chunks.
 import { BufferGeometry, Material, Mesh, Scene } from "three";
 import { CHUNK_SIZE, VIEW_RINGS } from "../constants";
+import type { AircraftTypeId } from "../sim/aircraft";
 import { createChunkGrid, createCoordTable, lodForRing, type ChunkKey } from "../sim/chunks";
 import { themeById, type ThemeId, type WorldContext } from "../sim/themes";
 import {
@@ -31,6 +32,8 @@ export type PreparationPhase = "terrain" | "previews" | "commit";
 export interface PreparationJob {
   readonly generation: number;
   readonly themeId: ThemeId;
+  /** Committed Aircraft Type for this launch/restore — swaps the visible mesh at commit. */
+  readonly aircraftType: AircraftTypeId;
   readonly seed: number;
   readonly kind: PreparationKind;
   phase: PreparationPhase;

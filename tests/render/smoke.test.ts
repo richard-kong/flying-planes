@@ -4,7 +4,8 @@ import { createTerrainMaterial } from "../../src/render/terrainMaterial";
 import { createChunkPool, fillChunk } from "../../src/render/terrainMesh";
 import { worldAlien } from "../sim/theme-test-helpers";
 import { createSkyMesh } from "../../src/render/sky";
-import { createPlaneMesh } from "../../src/render/plane";
+import { buildAircraft } from "../../src/render/aircraft";
+import { aircraftById } from "../../src/sim/aircraft";
 
 // research R11: build the whole scene graph in Node, no WebGLRenderer.
 describe("render smoke", () => {
@@ -18,7 +19,7 @@ describe("render smoke", () => {
       scene.add(new Mesh(geometry, material));
     }
     scene.add(createSkyMesh());
-    scene.add(createPlaneMesh());
+    scene.add(buildAircraft(aircraftById("light")).group);
     scene.updateMatrixWorld(true);
     expect(material.vertexShader.length).toBeGreaterThan(0);
     expect(material.fragmentShader.length).toBeGreaterThan(0);

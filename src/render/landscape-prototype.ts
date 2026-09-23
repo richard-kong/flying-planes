@@ -4,7 +4,8 @@ import {
   PlaneGeometry, Scene, ShaderMaterial, Uniform, Vector3, WebGLRenderer,
 } from "three";
 import { fbm } from "../sim/noise";
-import { createPlaneMesh } from "./plane";
+import { buildAircraft } from "./aircraft";
+import { aircraftById } from "../sim/aircraft";
 
 interface Direction {
   id: string;
@@ -99,7 +100,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.toneMapping = NoToneMapping;
 const scene = new Scene();
 const camera = new PerspectiveCamera(54, 16 / 9, 1, 24000);
-const plane = createPlaneMesh();
+const plane = buildAircraft(aircraftById("light")).group;
 plane.position.set(0, -10, -55);
 plane.scale.setScalar(0.64);
 plane.rotation.z = -0.06;
