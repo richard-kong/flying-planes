@@ -100,7 +100,7 @@ fresh Flight. Force a launch failure: prior Biplane Flight still recoverable.
 
 - [X] T021 Delete the visual study: `src/render/aircraft-prototype.ts`, `aircraft-prototype.html`, `scripts/capture-aircraft-prototypes.ts`, `scripts/build-aircraft-review.ts`; remove `.lavish/` from `.gitignore`; update the "Design review record" section of `specs/003-aircraft-selection/quickstart.md` to state the files were removed and where the PR captures live.
 - [X] T022 [P] Run `npm run typecheck`, `npm test`, `npm run test:browser`, `npm run build`, `npm run size`; record the gzipped total (expect < 160 KB) and the chooser-interactive time with nine cards in the PR Constitution Check; run `npm run soak:rendered` for the Passenger Jet and Helicopter and record allocation results.
-- [ ] T023 [P] Capture PR evidence per `specs/003-aircraft-selection/quickstart.md`: six card images, the 18 aircraft × Theme chase views at `?seed=42`, and one paused-vs-resumed spinner comparison; attach to the implementing PR (not the repository).
+- [X] T023 [P] Capture PR evidence per `specs/003-aircraft-selection/quickstart.md`: six card images, the 18 aircraft × Theme chase views at `?seed=42`, and one paused-vs-resumed spinner comparison; attach to the implementing PR (not the repository).
 - [ ] T024 Owner acceptance: on the reference laptop and phone, run quickstart steps 1–9, record fps for the Passenger Jet over Nature, and confirm SC-001 recognisability of all six cards and in-flight views; file any tuning of paint or proportions as follow-up commits on the same PR.
 
 ## Dependencies
