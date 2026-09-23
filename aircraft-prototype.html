@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aircraft studies · Flying Planes</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body { margin: 0; color: #fff; font: 14px/1.5 system-ui, sans-serif; background: linear-gradient(#6fa7d6 0%, #b9d6e8 55%, #dfece9 100%); }
+      canvas { width: 100vw; height: 100vh; display: block; }
+      header { position: fixed; top: 30px; left: 32px; text-shadow: 0 2px 8px #17293180; pointer-events: none; }
+      h1 { margin: 6px 0; font-size: 27px; font-weight: 500; }
+      header p { margin: 0; }
+      header small { letter-spacing: .16em; text-transform: uppercase; }
+      nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid #ffffff40; border-radius: 40px; background: #10202ee8; max-width: calc(100vw - 24px); }
+      select { border: 0; color: white; background: #ffffff12; border-radius: 24px; padding: 10px 14px; font: inherit; cursor: pointer; min-width: 0; }
+      option { background: #10202e; }
+      :focus-visible { outline: 2px solid #b8f1ea; outline-offset: 3px; }
+      body.capture header, body.capture nav { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="aircraft" aria-label="Procedural aircraft prototype"></canvas>
+    <header><small>Flying Planes · aircraft prototype</small><h1 id="title"></h1><p id="description"></p></header>
+    <nav aria-label="Prototype controls">
+      <select id="variant" aria-label="Aircraft design"></select>
+      <select id="view" aria-label="View">
+        <option value="card">Card · three-quarter</option>
+        <option value="level">Chase · level</option>
+        <option value="bank">Chase · banking</option>
+        <option value="detail">Rear three-quarter</option>
+      </select>
+    </nav>
+    <script type="module" src="/src/render/aircraft-prototype.ts"></script>
+  </body>
+</html>
