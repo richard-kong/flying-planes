@@ -153,7 +153,7 @@ describe("aircraft render smoke", () => {
   beforeAll(async () => {
     const port = await freePort();
     dev = await createServer({
-      server: { port, strictPort: true },
+      server: { host: "127.0.0.1", port, strictPort: true },
       logLevel: "error",
     });
     await dev.listen();
