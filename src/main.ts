@@ -44,6 +44,7 @@ import {
   pressFly,
   restoreFailed,
   restoreReady,
+  selectAircraft,
   selectTheme,
   SNAPSHOT_MANIFEST_CAP,
   type ChooserState,
@@ -69,6 +70,7 @@ import {
   disposePreviewSet,
   PREVIEW_H,
   PREVIEW_W,
+  previewCardKey,
   renderNextPreview,
   renderOverviewShot,
   retryFailedPreviews,
@@ -290,6 +292,10 @@ const chooser = createChooser({
     selectTheme(session, id);
     chooser.sync(session);
   },
+  onSelectAircraft(id) {
+    selectAircraft(session, id);
+    chooser.sync(session);
+  },
   onFly() {
     const req = pressFly(session);
     if (!req) return;
@@ -387,6 +393,9 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
       } catch {
         // card-level failure is non-fatal for launch; retry stays available
       }
+      for (const card of previewSet.cards) {
+        chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
+      }
       begin();
     })();
   } else {
@@ -403,20 +412,23 @@ const previewTarget = new WebGLRenderTarget(PREVIEW_W, PREVIEW_H, {
   format: RGBAFormat,
   generateMipmaps: false,
 });
-const previewSet = createPreviewSet();
+const previewSet = createPreviewSet(aircraftByType);
 
 let previewsStarted = false;
 async function runPreviews(): Promise<void> {
-  for (let i = 0; i < previewSet.cards.length; i++) {
+  let rendered = 0;
+  for (;;) {
+    const card = previewSet.cards.find((c) => c.status === "pending");
+    if (!card) break;
     try {
       await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
     } catch {
       // renderNextPreview marks the card failed itself; keep pumping
     }
-    const card = previewSet.cards[i];
-    chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+    rendered += 1;
+    chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
     if (session.phase === "booting") {
-      chooser.setStatus(`Rendering previews… ${i + 1}/3`);
+      chooser.setStatus(`Rendering previews… ${rendered}/${previewSet.cards.length}`);
     }
     // keep the rAF loop alive between cards — never block boot on a card burst
     await new Promise((r) => requestAnimationFrame(r));
@@ -513,7 +525,7 @@ function retryFailed(): void {
         /* per-card status already set */
       }
       for (const card of previewSet.cards) {
-        chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+        chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
       }
       if (previewSet.done) {
         session.error = null;

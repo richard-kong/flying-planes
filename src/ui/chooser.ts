@@ -156,7 +156,9 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
       if (sel && !sel.checked) sel.checked = true;
       const selAircraft = aircraftRadios.get(state.aircraftSelection);
       if (selAircraft && !selAircraft.checked) selAircraft.checked = true;
-      flyBtn.disabled = busy;
+      // session isBusy excludes booting (previews aren't an operation) but the chooser
+      // is inert until its cards resolve
+      flyBtn.disabled = busy || state.phase === "booting";
       // offered during preparing too — a mid-prep Cancel abandons the candidate and
       // rebuilds the paused world; disabled only while the rebuild itself runs
       cancelAllowed = cancelOffered(state);

@@ -412,9 +412,9 @@ export async function renderNextPreview(
   target: WebGLRenderTarget,
   restoreMaterial: () => void,
 ): Promise<boolean> {
-  const card = set.cards.find((c) => c.status !== "ready");
+  const card = set.cards.find((c) => c.status === "pending");
   if (!card) {
-    set.done = true;
+    set.done = set.cards.every((c) => c.status === "ready");
     return false;
   }
   try {
