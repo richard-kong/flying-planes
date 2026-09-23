@@ -9,18 +9,11 @@ Thirty procedural candidates (five per type) were rendered by the app's Three.js
 reviewed in a Lavish comparison page. Owner picks: **H3 Executive, L1 Classic trainer,
 F5 Interceptor, P1 Narrow-body, B4 Sport, G2 Vintage**; keep current in-flight size; Phong shading.
 
-To regenerate the study locally (temporary files, removed by the implementation PR):
-
-```sh
-npm ci
-npm run dev                                   # then open /aircraft-prototype.html?variant=H3&view=card
-npx vite-node scripts/capture-aircraft-prototypes.ts   # writes .lavish/aircraft-prototypes/{img,designs.json}
-npx vite-node scripts/build-aircraft-review.ts         # writes .lavish/aircraft-prototypes/index.html
-```
-
-`?view=` accepts `card`, `level`, `bank`, `detail`; `?variant=` accepts `H1..H5, L1..L5, F1..F5,
-P1..P5, B1..B5, G1..G5`. `.lavish/` is git-ignored; the reference captures of the six picks are
-attached to the planning PR.
+The study's temporary files (`src/render/aircraft-prototype.ts`, `aircraft-prototype.html`,
+`scripts/capture-aircraft-prototypes.ts`, `scripts/build-aircraft-review.ts`) were removed by
+the implementation PR once the six picks were ported into `src/render/aircraft.ts`; the
+`.lavish/` gitignore entry went with them. The reference captures of the six picks remain
+attached to the planning PR (#22).
 
 ## Existing checks (must stay green)
 
