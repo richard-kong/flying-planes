@@ -2,6 +2,7 @@
 // or preparation internals. src/ui/chooser.ts adapts DOM events; src/main.ts performs the
 // world/prep work the returned requests describe. Contracts: contracts/lifecycle.md.
 import type { ThemeId } from "./themes";
+import { DEFAULT_AIRCRAFT, type AircraftTypeId } from "./aircraft";
 import type { PlaneState } from "./flight";
 import type { CameraPose } from "./camera";
 import type { AutopilotState } from "./autopilot";
@@ -21,8 +22,12 @@ export interface ChooserState {
   phase: ChooserPhase;
   /** Pending card selection — locked while preparing/restoring. */
   selection: ThemeId;
+  /** Pending aircraft card — locked while preparing/restoring. */
+  aircraftSelection: AircraftTypeId;
   /** The committed world's theme; null until the first Fly lands. */
   active: ThemeId | null;
+  /** The committed Flight's aircraft; null until the first Fly lands. */
+  activeAircraft: AircraftTypeId | null;
   /** The single page Seed chosen at boot. */
   seed: number;
   /** Monotonic operation token: startup, launches (incl. same-theme) and restores bump it. */
@@ -38,6 +43,7 @@ export interface ChooserState {
 export interface PreparationRequest {
   generation: number;
   themeId: ThemeId;
+  aircraftType: AircraftTypeId;
   seed: number;
   kind: PreparationRequestKind;
 }
@@ -48,12 +54,15 @@ export interface PreparationRequest {
 // Cancel can restore the same coverage (LOD and morph state derive from key + position).
 export interface FlightSnapshot {
   themeId: ThemeId;
+  aircraftType: AircraftTypeId;
   seed: number;
   plane: PlaneState; // value copies — never the live objects
   prev: PlaneState;
   pose: CameraPose;
   posePrev: CameraPose;
   simTime: number;
+  /** Master spinner phase frozen at pause — resumed without catch-up. */
+  spinPhase: number;
   accumulator: number;
   throttle: number;
   lastInputTime: number;
@@ -94,7 +103,9 @@ export function createSession(seed: number): ChooserState {
   return {
     phase: "booting",
     selection: "nature",
+    aircraftSelection: DEFAULT_AIRCRAFT,
     active: null,
+    activeAircraft: null,
     seed,
     generation: 0,
     hasPriorFlight: false,
@@ -143,6 +154,13 @@ export function selectTheme(s: ChooserState, id: ThemeId): boolean {
   return true;
 }
 
+/** Aircraft card selection: choosing only — committed by the next successful Fly. */
+export function selectAircraft(s: ChooserState, id: AircraftTypeId): boolean {
+  if (s.phase !== "choosing") return false;
+  s.aircraftSelection = id;
+  return true;
+}
+
 /**
  * Fly pressed: choosing -> preparing under a new generation. A startup error retries the
  * unfinished startup work first, so that launch reports kind "startup". Selection locks.
@@ -154,13 +172,20 @@ export function pressFly(s: ChooserState): PreparationRequest | null {
   s.priorTerrainResident = false; // Fly releases the paused residency to the shared pool
   const kind: PreparationRequestKind = s.error?.kind === "startup" ? "startup" : "launch";
   s.error = null;
-  return { generation: s.generation, themeId: s.selection, seed: s.seed, kind };
+  return {
+    generation: s.generation,
+    themeId: s.selection,
+    aircraftType: s.aircraftSelection,
+    seed: s.seed,
+    kind,
+  };
 }
 
 /** Generation-checked commit: only the live token lands the world. */
 export function preparationReady(s: ChooserState, generation: number): boolean {
   if (s.phase !== "preparing" || generation !== s.generation) return false;
   s.active = s.selection;
+  s.activeAircraft = s.aircraftSelection;
   s.hasPriorFlight = true;
   s.phase = "flying";
   s.error = null;
@@ -185,6 +210,7 @@ export function openChooser(s: ChooserState): boolean {
   if (s.phase !== "flying") return false;
   s.phase = "choosing";
   s.selection = s.active ?? s.selection;
+  s.aircraftSelection = s.activeAircraft ?? s.aircraftSelection;
   s.priorTerrainResident = true; // the paused world stays resident while browsing
   s.error = null;
   return true;
@@ -201,6 +227,7 @@ export function pressCancel(s: ChooserState): "resume" | "restoring" | null {
     s.generation += 1;
     s.error = null;
     s.selection = s.active ?? s.selection;
+    s.aircraftSelection = s.activeAircraft ?? s.aircraftSelection;
     if (s.priorTerrainResident) return "resume";
     s.phase = "restoring";
     return "restoring";
@@ -209,6 +236,7 @@ export function pressCancel(s: ChooserState): "resume" | "restoring" | null {
     s.generation += 1;
     s.phase = "restoring";
     s.error = null;
+    s.aircraftSelection = s.activeAircraft ?? s.aircraftSelection;
     return "restoring";
   }
   return null; // flying / restoring / booting
@@ -220,6 +248,7 @@ export function restoreReady(s: ChooserState, generation: number): boolean {
   if (s.phase !== "restoring" && s.phase !== "choosing") return false;
   s.phase = "flying";
   s.selection = s.active ?? s.selection;
+  s.aircraftSelection = s.activeAircraft ?? s.aircraftSelection;
   s.error = null;
   return true;
 }
