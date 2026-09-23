@@ -4,7 +4,7 @@
 // the opaque overlay and commits terrain/surface/sky/fog/pose atomically. Flight listeners
 // live on the canvas and only apply while the session is flying; every menu boundary closes
 // the fresh-input gate.
-import { Box3, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
+import { Box3, Color, PerspectiveCamera, Scene, Sphere, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
 import {
   CHUNK_SIZE,
   CHUNKS_PER_FRAME,
@@ -60,6 +60,7 @@ import {
   applyThemeToLights,
   buildAircraft,
   createAircraftLights,
+  disposeAircraft,
   type Aircraft,
 } from "./render/aircraft";
 import { applyThemeToSky, createSkyMesh, updateSkyMesh } from "./render/sky";
@@ -770,6 +771,21 @@ if (__VERIFY_HOOKS__) {
   (globalThis as { __verifyOverview?: (id: ThemeId, w: number, h: number) => Promise<string> })
     .__verifyOverview = (id, w, h) =>
     renderOverviewShot(renderer, terrainMaterial, id, w, h, restoreLiveTheme);
+  (globalThis as { __verifyAircraftKit?: () => unknown }).__verifyAircraftKit = () => ({
+    WebGLRenderer,
+    Scene,
+    PerspectiveCamera,
+    Box3,
+    Vector3,
+    Color,
+    Sphere,
+    buildAircraft,
+    disposeAircraft,
+    createAircraftLights,
+    applyThemeToLights,
+    aircraftById,
+    themeById,
+  });
   (globalThis as { __verifyAircraft?: () => unknown }).__verifyAircraft = () => {
     const g = active.group;
     g.updateWorldMatrix(true, true);

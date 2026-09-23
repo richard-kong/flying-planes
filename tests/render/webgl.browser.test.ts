@@ -6,8 +6,7 @@
 // (constitution III).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Browser, Page } from "playwright";
-import { createServer, type ViteDevServer } from "vite";
-import { freePort, launchChromium } from "../../scripts/browser-harness";
+import { launchChromium } from "../../scripts/browser-harness";
 import { AIRCRAFT, PLANE_FOOTPRINT } from "../../src/sim/aircraft";
 
 const BASE = process.env.BROWSER_BASE_URL ?? "http://127.0.0.1:0";
@@ -140,93 +139,73 @@ interface AircraftFrame {
   spinners: string[];
 }
 
-// 003 T007: the verification bundle does not include the aircraft module, so this mounts
-// buildAircraft through a vite dev server instead — every group plus the shared lighting
-// rig renders one frame on a flat background, and the scaled world-bbox dominant axis
-// (rotor disc included) must land on PLANE_FOOTPRINT.
+// 003 T007: mounts buildAircraft through the verification bundle's __verifyAircraftKit
+// hook — every group plus the shared lighting rig renders one frame on a flat
+// background, and the scaled world-bbox dominant axis (rotor disc included) must land
+// on PLANE_FOOTPRINT.
 describe("aircraft render smoke", () => {
-  let dev: ViteDevServer | null = null;
-  let devPage: Page | null = null;
-  let devBase = "";
-  const devErrors: string[] = [];
+  let smokePage: Page | null = null;
+  const smokeErrors: string[] = [];
 
   beforeAll(async () => {
-    const port = await freePort();
-    dev = await createServer({
-      server: { host: "127.0.0.1", port, strictPort: true },
-      optimizeDeps: { include: ["three"] },
-      logLevel: "error",
-    });
-    await dev.listen();
-    devBase = `http://127.0.0.1:${port}`;
-    // cold dep cache (CI): force a transform so the optimizer discovers `three`,
-    // then wait for the deps URL to exist — the page's injected imports 404 until it does
-    await fetch(`${devBase}/src/render/aircraft.ts`);
-    const depsDeadline = Date.now() + 240_000;
-    for (;;) {
-      const res = await fetch(`${devBase}/node_modules/.vite/deps/three.js`);
-      if (res.ok) break;
-      if (Date.now() > depsDeadline) throw new Error("vite optimizeDeps never served three.js");
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    devPage = await browser!.newPage({ viewport: { width: 640, height: 360 } });
-    devPage.on("pageerror", (err) => devErrors.push(String(err)));
+    smokePage = await browser!.newPage({ viewport: { width: 640, height: 360 } });
+    smokePage.on("pageerror", (err) => smokeErrors.push(String(err)));
+    await smokePage.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+    await smokePage.waitForFunction(
+      () =>
+        (window as unknown as { __verifyAircraftKit?: unknown })
+          .__verifyAircraftKit !== undefined,
+      { timeout: 120_000 },
+    );
   }, 300_000);
 
   afterAll(async () => {
-    await devPage?.close();
-    await dev?.close();
+    await smokePage?.close();
   });
 
   it(
     "renders every aircraft type at the shared PLANE_FOOTPRINT without page errors",
     async () => {
-      await devPage!.goto(`${devBase}/`, { waitUntil: "domcontentloaded" });
-      // vite-node rewrites import() inside evaluate, so the modules are loaded by an
-      // injected module script on the dev-server origin instead
-      await devPage!.addScriptTag({
-        type: "module",
-        content: `window.__kit = Promise.all([
-          import("/node_modules/.vite/deps/three.js"),
-          import("/src/render/aircraft.ts"),
-          import("/src/sim/aircraft.ts"),
-          import("/src/sim/themes.ts"),
-        ]).then(([THREE, M, S, T]) => ({ THREE, M, S, T }))`,
-      });
-      await devPage!.waitForFunction(
-        () => (globalThis as { __kit?: unknown }).__kit !== undefined,
-      );
-      const stats = await devPage!.evaluate(async (ids) => {
-        const { THREE, M, S, T } = (await (
-          globalThis as { __kit?: Promise<unknown> }
-        ).__kit!) as {
-          THREE: typeof import("three");
-          M: typeof import("../../src/render/aircraft");
-          S: typeof import("../../src/sim/aircraft");
-          T: typeof import("../../src/sim/themes");
+      const stats = await smokePage!.evaluate(async (ids) => {
+        const kit = (
+          window as unknown as { __verifyAircraftKit: () => unknown }
+        ).__verifyAircraftKit() as {
+          WebGLRenderer: typeof import("three").WebGLRenderer;
+          Scene: typeof import("three").Scene;
+          PerspectiveCamera: typeof import("three").PerspectiveCamera;
+          Box3: typeof import("three").Box3;
+          Vector3: typeof import("three").Vector3;
+          Color: typeof import("three").Color;
+          Sphere: typeof import("three").Sphere;
+          buildAircraft: typeof import("../../src/render/aircraft").buildAircraft;
+          disposeAircraft: typeof import("../../src/render/aircraft").disposeAircraft;
+          createAircraftLights: typeof import("../../src/render/aircraft").createAircraftLights;
+          applyThemeToLights: typeof import("../../src/render/aircraft").applyThemeToLights;
+          aircraftById: typeof import("../../src/sim/aircraft").aircraftById;
+          themeById: typeof import("../../src/sim/themes").themeById;
         };
         const W = 640;
         const H = 360;
         const canvas = document.createElement("canvas");
         canvas.width = W;
         canvas.height = H;
-        const renderer = new THREE.WebGLRenderer({
+        const renderer = new kit.WebGLRenderer({
           canvas,
           antialias: false,
           preserveDrawingBuffer: true,
         });
         renderer.setSize(W, H, false);
         renderer.setClearColor(0x101418, 1);
-        const scene = new THREE.Scene();
-        const lights = M.createAircraftLights();
-        M.applyThemeToLights(lights, T.themeById("nature"));
+        const scene = new kit.Scene();
+        const lights = kit.createAircraftLights();
+        kit.applyThemeToLights(lights, kit.themeById("nature"));
         scene.add(lights.hemi, lights.sun);
-        const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 2000);
+        const camera = new kit.PerspectiveCamera(30, W / H, 0.1, 2000);
         const probe = document.createElement("canvas");
         probe.width = W;
         probe.height = H;
         const ctx = probe.getContext("2d")!;
-        const bg = new THREE.Color(0x101418);
+        const bg = new kit.Color(0x101418);
         const bgRgb = [
           Math.round(bg.r * 255),
           Math.round(bg.g * 255),
@@ -234,20 +213,20 @@ describe("aircraft render smoke", () => {
         ];
         const out: AircraftFrame[] = [];
         for (const id of ids) {
-          const a = M.buildAircraft(S.aircraftById(id));
+          const a = kit.buildAircraft(kit.aircraftById(id));
           scene.add(a.group);
           a.group.updateMatrixWorld(true);
-          const box = new THREE.Box3().setFromObject(a.group);
-          const size = box.getSize(new THREE.Vector3());
+          const box = new kit.Box3().setFromObject(a.group);
+          const size = box.getSize(new kit.Vector3());
           const dominant = Math.max(size.x, size.z);
-          const sphere = box.getBoundingSphere(new THREE.Sphere());
+          const sphere = box.getBoundingSphere(new kit.Sphere());
           const dist =
             (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 0.92;
           camera.position
             .set(-0.6, 0.34, 0.72)
             .normalize()
             .multiplyScalar(dist)
-            .add(new THREE.Vector3(0, 0.1, 0.2));
+            .add(new kit.Vector3(0, 0.1, 0.2));
           camera.lookAt(0, 0.1, 0.2);
           renderer.render(scene, camera);
           ctx.drawImage(canvas, 0, 0);
@@ -264,13 +243,13 @@ describe("aircraft render smoke", () => {
             spinners: a.spinners.map((s) => String(s.userData.spinner)),
           });
           scene.remove(a.group);
-          M.disposeAircraft(a);
+          kit.disposeAircraft(a);
         }
         renderer.dispose();
         return out;
       }, AIRCRAFT.map((a) => a.id));
 
-      expect(devErrors).toEqual([]);
+      expect(smokeErrors).toEqual([]);
       expect(stats).toHaveLength(AIRCRAFT.length);
       for (const [i, type] of AIRCRAFT.entries()) {
         const s = stats[i];
