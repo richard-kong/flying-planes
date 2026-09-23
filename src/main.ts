@@ -956,6 +956,7 @@ requestAnimationFrame(() => {
     previewsStarted = true;
     void runPreviews();
   }
-  chooser.open();
+  // sync before open() so disabled states (Fly during booting) are settled before focus
   syncChooser();
+  chooser.open();
 });

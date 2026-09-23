@@ -48,11 +48,11 @@ describe("startup lifecycle", () => {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
     try {
       await gotoAndWaitChooser(page, "?seed=42&renderTest");
-      const names = await page.$$eval("#chooser .card .name", (els) =>
+      const names = await page.$$eval('[aria-label="World"] .card .name', (els) =>
         els.map((e) => e.textContent?.trim()),
       );
       expect(names).toEqual(["Nature", "Alien Planet", "Arctic"]);
-      const descLens = await page.$$eval("#chooser .card .desc", (els) =>
+      const descLens = await page.$$eval('[aria-label="World"] .card .desc', (els) =>
         els.map((e) => (e.textContent ?? "").trim().length),
       );
       expect(descLens.every((n) => n > 20)).toBe(true);

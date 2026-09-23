@@ -136,8 +136,9 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
       open = true;
       lastFocused = document.activeElement;
       root.hidden = false;
-      // move focus into the dialog — Fly is the primary action
-      flyBtn.focus();
+      // move focus into the dialog — Fly is the primary action; while it is disabled
+      // (booting, preparing) the dialog root takes focus instead
+      (flyBtn.disabled ? root : flyBtn).focus();
     },
 
     close() {
@@ -202,7 +203,7 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
     },
 
     focus() {
-      flyBtn.focus();
+      (flyBtn.disabled ? root : flyBtn).focus();
     },
   };
 }
