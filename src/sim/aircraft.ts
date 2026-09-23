@@ -1,6 +1,6 @@
 // Aircraft Types: the visual identity of the Plane. Pure records — no Three.js —
-// chosen in the Flight Chooser and rendered by src/render/aircraft.ts. Selection
-// changes appearance only; every type flies the same Flight Model.
+// chosen in the Flight Chooser and consumed by the render layer's aircraft module.
+// Selection changes appearance only; every type flies the same Flight Model.
 
 export type AircraftTypeId =
   | "helicopter"
