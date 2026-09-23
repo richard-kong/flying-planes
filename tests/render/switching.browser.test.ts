@@ -69,7 +69,7 @@ async function openChooserFromFlight(page: Page): Promise<void> {
 
 async function cancelDirect(page: Page): Promise<void> {
   await page.click("#cancel");
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
     timeout: 30_000,
   });
 }
@@ -80,8 +80,9 @@ async function cancelWhilePreparing(page: Page): Promise<void> {
   await page.keyboard.press("Escape");
   await page.waitForFunction(
     () => document.body.dataset.phase === "flying",
+    undefined,
     { timeout: 120_000 },
-  );
+    );
 }
 
 describe("theme switching (US3)", () => {
@@ -250,7 +251,7 @@ describe("theme switching (US3)", () => {
       });
       // retry: Fly again on the retained selection lands Alien
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       expect((await state(page)).phase).toBe("flying");
@@ -284,7 +285,7 @@ describe("theme switching (US3)", () => {
       });
       // the failed launch released the paused residency — Cancel must rebuild it
       await page.click("#cancel");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       const restored = await state(page);
@@ -313,7 +314,7 @@ describe("theme switching (US3)", () => {
         generation: number;
       };
       expect(stats.generation).toBeGreaterThanOrEqual(2); // exactly one live generation
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       expect(errs.pageErrors).toEqual([]);
@@ -340,7 +341,7 @@ describe("theme switching (US3)", () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
       await page.setViewportSize({ width: 900, height: 500 });
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       await page.evaluate(() => {
@@ -462,7 +463,7 @@ describe("aircraft switching (003 US3)", () => {
         requestAnimationFrame(probe);
       });
       await page.click("#cancel");
-      await page.waitForFunction(() => (globalThis as any).__resumeSpin !== null, {
+      await page.waitForFunction(() => (globalThis as any).__resumeSpin !== null, undefined, {
         timeout: 30_000,
       });
       const firstFrameSpin = (await page.evaluate(
@@ -498,7 +499,7 @@ describe("aircraft switching (003 US3)", () => {
       await openChooserFromFlight(page);
       await selectAircraft(page, "fighter"); // aircraft changes, theme stays Nature
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
 
@@ -543,7 +544,7 @@ describe("aircraft switching (003 US3)", () => {
       await openChooserFromFlight(page);
       // touch neither radio — Fly on the unchanged pair is still a fresh Flight
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
 
@@ -589,7 +590,7 @@ describe("aircraft switching (003 US3)", () => {
       });
       // the failed launch released the paused world — Cancel rebuilds it, aircraft too
       await page.click("#cancel");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       const restored = await aircraft(page);

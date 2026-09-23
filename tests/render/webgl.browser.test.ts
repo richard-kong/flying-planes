@@ -89,11 +89,12 @@ describe("webgl smoke", () => {
           () =>
             document.body.dataset.readyChooser === "true" ||
             document.body.dataset.phase === "choosing",
-          { timeout: 120_000 },
-        );
+          undefined,
+    { timeout: 120_000 },
+    );
         await page.click(`#chooser input[value="${theme.id}"]`);
         await page.click("#fly");
-        await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+        await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
           timeout: 120_000,
         });
 
@@ -155,7 +156,8 @@ describe("aircraft render smoke", () => {
       () =>
         (window as unknown as { __verifyAircraftKit?: unknown })
           .__verifyAircraftKit !== undefined,
-      { timeout: 120_000 },
+      undefined,
+    { timeout: 120_000 },
     );
   }, 300_000);
 

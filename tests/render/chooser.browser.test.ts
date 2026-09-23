@@ -101,7 +101,7 @@ describe("chooser accessibility", () => {
       // Enter on the focused Fly button launches
       await page.focus("#fly");
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
     } finally {
@@ -119,7 +119,7 @@ describe("chooser accessibility", () => {
       await page.mouse.move(400, 250);
       await page.mouse.move(500, 250);
       await page.click("#change-theme");
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 30_000,
       });
       // wheel over the dialog + drags on it must not count as flight input
@@ -130,7 +130,7 @@ describe("chooser accessibility", () => {
       await page.mouse.up();
       // resume via Cancel (prior flight exists)
       await page.click("#cancel");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 60_000,
       });
       expect(errs.pageErrors).toEqual([]);
@@ -149,12 +149,12 @@ describe("chooser accessibility", () => {
       expect(await page.isVisible("#cancel")).toBe(false);
       await flyTheme(page, "alien");
       await page.click("#change-theme");
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 30_000,
       });
       expect(await page.isVisible("#cancel")).toBe(true);
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 60_000,
       });
     } finally {
@@ -273,7 +273,7 @@ describe("aircraft selection (003 T012)", () => {
       // open the chooser over a live flight so both Fly and Cancel are offered
       await flyTheme(page, "nature");
       await page.click("#change-theme");
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 30_000,
       });
       await page.waitForFunction(() => !document.getElementById("cancel")!.hidden);
@@ -335,7 +335,7 @@ describe("aircraft selection (003 T012)", () => {
       await page.mouse.move(cx + 80, cy - 40);
       await page.mouse.up();
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       // spawn cruise sits mid-envelope; with no fresh input it must hold, dead-straight

@@ -19,9 +19,13 @@ const browser = await launchChromium();
 try {
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   await page.goto(`${server.url}/?seed=42&renderTest=1&aircraft=${aircraft}`);
-  await page.waitForFunction(() => document.body.dataset.phase === "choosing", { timeout: 120_000 });
+  await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined,
+    { timeout: 120_000 },
+    );
   await page.click("#fly"); // Nature default
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", { timeout: 120_000 });
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined,
+    { timeout: 120_000 },
+    );
   // warm-up: let pools reach their high-water marks before sampling
   await page.mouse.move(480, 240);
   for (let i = 0; i < 24; i++) await page.mouse.wheel(0, -120);

@@ -128,8 +128,9 @@ describe("aircraft selection", () => {
           ((
             window as unknown as { __verifyState?: () => { simTime: number } }
           ).__verifyState?.()?.simTime ?? 0) >= 6,
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const before = (await probeAircraft(page))?.spinPhase;
       expect(before).toBeDefined();
       await page.waitForFunction(
@@ -167,8 +168,9 @@ describe("aircraft selection", () => {
           await page.click("#change-theme");
           await page.waitForFunction(
             () => document.body.dataset.phase === "choosing",
-            { timeout: 30_000 },
-          );
+            undefined,
+    { timeout: 30_000 },
+    );
           const checked = await checkedSelections(page);
           expect(checked.theme, label).toBe(themeId);
           expect(checked.aircraft, label).toBe(aircraftId);
@@ -194,8 +196,9 @@ describe("aircraft selection", () => {
         () =>
           document.body.dataset.readyChooser === "true" ||
           document.body.dataset.phase === "choosing",
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const checked = await checkedSelections(page);
       expect(checked.theme).toBe("nature");
       expect(checked.aircraft).toBe("light");

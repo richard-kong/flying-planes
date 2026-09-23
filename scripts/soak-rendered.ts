@@ -99,13 +99,13 @@ try {
   });
 
   await page.goto(`${server.url}/?seed=${args.seed}&renderTest=1&aircraft=${args.aircraft}`);
-  await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+  await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
     timeout: 120_000,
   });
   // drive the real chooser: select, Fly, wait for the committed first frame
   await page.click(`#chooser input[value="${args.theme}"]`);
   await page.click("#fly");
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
     timeout: 120_000,
   });
 

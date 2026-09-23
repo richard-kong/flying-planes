@@ -24,6 +24,7 @@ export async function gotoAndWaitChooser(page: Page, query = ""): Promise<void> 
     () =>
       document.body.dataset.readyChooser === "true" ||
       document.body.dataset.phase === "choosing",
+    undefined,
     { timeout: 120_000 },
   );
 }
@@ -31,14 +32,14 @@ export async function gotoAndWaitChooser(page: Page, query = ""): Promise<void> 
 export async function flyTheme(page: Page, themeId: "nature" | "alien" | "arctic"): Promise<void> {
   await page.click(`#chooser input[value="${themeId}"]`);
   await page.click("#fly");
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
     timeout: 120_000,
   });
 }
 
 export async function flyDefault(page: Page): Promise<void> {
   await page.click("#fly");
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
     timeout: 120_000,
   });
 }

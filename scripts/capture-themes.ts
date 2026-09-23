@@ -32,8 +32,9 @@ try {
     () =>
       document.body.dataset.readyChooser === "true" ||
       document.body.dataset.phase === "choosing",
+    undefined,
     { timeout: 120_000 },
-  );
+    );
 
   // chooser with the three decoded preview cards
   await page.screenshot({ path: `${OUT}/chooser.png` });
@@ -64,13 +65,13 @@ try {
     if (needsChooser) {
       // flying -> reopen the chooser
       await page.click("#change-theme");
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 30_000,
       });
     }
     await page.click(`#chooser input[value="${id}"]`);
     await page.click("#fly");
-    await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+    await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
       timeout: 120_000,
     });
     // give the streamer a few seconds to fill the view disc

@@ -37,7 +37,7 @@ async function switchOnce(to: "nature" | "alien" | "arctic"): Promise<void> {
   await page.waitForFunction(() => document.body.dataset.phase === "choosing");
   await page.click(`#chooser input[value="${to}"]`);
   await page.click("#fly");
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
     timeout: 120_000,
   });
 }
@@ -57,7 +57,7 @@ describe("resource stability across switches (T054)", () => {
     const errs = collectPageErrors(page);
     await gotoAndWaitChooser(page, "?seed=42&renderTest=1");
     await page.click("#fly");
-    await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+    await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
       timeout: 120_000,
     });
     const urls0 = await previewUrls();
@@ -69,7 +69,7 @@ describe("resource stability across switches (T054)", () => {
       await page.waitForFunction(() => document.body.dataset.phase === "choosing");
       await page.click(`#chooser input[value="${id}"]`);
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
     }
@@ -84,7 +84,7 @@ describe("resource stability across switches (T054)", () => {
         await page.click("#change-theme");
         await page.waitForFunction(() => document.body.dataset.phase === "choosing");
         await page.click("#cancel");
-        await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+        await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
           timeout: 30_000,
         });
       }
@@ -106,7 +106,7 @@ describe("resource stability across switches (T054)", () => {
           (globalThis as any).__verifyLaunch = undefined;
         });
         await page.click("#fly");
-        await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+        await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
           timeout: 120_000,
         });
       }

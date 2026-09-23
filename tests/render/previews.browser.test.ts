@@ -55,8 +55,9 @@ describe("theme previews", () => {
             ) as HTMLImageElement | null;
             return img && (img.dataset.state === "ready" || img.dataset.state === "failed");
           }),
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const cards = await cardInfo(page);
       for (const id of ["nature", "alien", "arctic"]) {
         expect(cards[id]?.state, `${id} state`).toBe("ready");
@@ -82,8 +83,9 @@ describe("theme previews", () => {
             ) as HTMLImageElement | null;
             return img?.dataset.state === "ready";
           }),
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const sigs = await page.evaluate(() => {
         const out: Record<string, number> = {};
         for (const id of ["nature", "alien", "arctic"]) {
@@ -127,13 +129,14 @@ describe("theme previews", () => {
         () =>
           (document.querySelector('img[data-theme-img="alien"]') as HTMLImageElement)
             ?.dataset.state === "ready",
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const before = (await cardInfo(page)).alien.src;
       // fly alien, reopen via Change theme — the same URL must still be attached
       await page.click('#chooser input[value="alien"]');
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       await page.click("#change-theme");
@@ -153,15 +156,16 @@ describe("theme previews", () => {
           (id: string) => (id === "arctic" ? { kind: "fail" } : undefined);
       });
       await page.goto(`${BASE}/?seed=42&renderTest`, { waitUntil: "load" });
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 120_000,
       });
       await page.waitForFunction(
         () =>
           (document.querySelector('img[data-theme-img="arctic"]') as HTMLImageElement)
             ?.dataset.state === "failed",
-        { timeout: 60_000 },
-      );
+        undefined,
+    { timeout: 60_000 },
+    );
       const cards = await cardInfo(page);
       expect(cards.arctic.state).toBe("failed");
       expect(cards.nature.state).toBe("ready");
@@ -194,8 +198,9 @@ describe("aircraft previews", () => {
             const s = (img as HTMLImageElement).dataset.state;
             return s === "ready" || s === "failed";
           }),
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const cards = await cardInfo(page, "aircraft");
       expect(Object.keys(cards)).toEqual(AIRCRAFT_IDS);
       for (const id of AIRCRAFT_IDS) {
@@ -233,8 +238,9 @@ describe("aircraft previews", () => {
             const s = (img as HTMLImageElement).dataset.state;
             return s === "ready" || s === "failed";
           }).length === 8,
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const held = await page.evaluate(() => ({
         phase: document.body.dataset.phase,
         readyChooser: document.body.dataset.readyChooser,
@@ -244,7 +250,7 @@ describe("aircraft previews", () => {
       expect(held.readyChooser).not.toBe("true");
       expect(held.flyDisabled).toBe(true);
       // once the ninth lands the chooser turns interactive
-      await page.waitForFunction(() => document.body.dataset.readyChooser === "true", {
+      await page.waitForFunction(() => document.body.dataset.readyChooser === "true", undefined, {
         timeout: 120_000,
       });
       const settled = await page.evaluate(() => ({
@@ -279,8 +285,9 @@ describe("aircraft previews", () => {
         () =>
           (document.querySelector('img[data-aircraft-img="airliner"]') as HTMLImageElement)
             ?.dataset.state === "failed",
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       // the other eight cards settle — the set holds no hidden placeholders
       await page.waitForFunction(
         () =>
@@ -288,8 +295,9 @@ describe("aircraft previews", () => {
             const s = (img as HTMLImageElement).dataset.state;
             return s === "ready" || s === "failed";
           }),
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const card = await page.evaluate(() => {
         const img = document.querySelector(
           'img[data-aircraft-img="airliner"]',
@@ -347,8 +355,9 @@ describe("aircraft previews", () => {
         () =>
           (document.querySelector('img[data-aircraft-img="airliner"]') as HTMLImageElement)
             ?.dataset.state === "ready",
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const cards = await cardInfo(page, "aircraft");
       expect(cards.airliner.state).toBe("ready");
       expect(cards.airliner.src).toMatch(/^blob:/);

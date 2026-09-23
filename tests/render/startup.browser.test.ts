@@ -68,7 +68,7 @@ describe("startup lifecycle", () => {
       expect(new URL(page.url()).searchParams.get("seed")).toBe("7");
       // malformed seed -> a generated one replaces it in the URL
       await page.goto(`${BASE}/?seed=notaseed`, { waitUntil: "load" });
-      await page.waitForFunction(() => /[?&]seed=\d+/.test(location.href), {
+      await page.waitForFunction(() => /[?&]seed=\d+/.test(location.href), undefined, {
         timeout: 60_000,
       });
       const s = Number(new URL(page.url()).searchParams.get("seed"));
@@ -85,7 +85,7 @@ describe("startup lifecycle", () => {
       await gotoAndWaitChooser(page, "?seed=42&renderTest");
       await page.click('#chooser input[value="arctic"]');
       await page.reload({ waitUntil: "load" });
-      await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
+      await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined, {
         timeout: 120_000,
       });
       const checked = await page.evaluate(
@@ -101,15 +101,16 @@ describe("startup lifecycle", () => {
     const page = await browser.newPage({ viewport: { width: 800, height: 500 } });
     try {
       await page.goto(`${BASE}/?seed=42&renderTest`, { waitUntil: "load" });
-      await page.waitForFunction(() => document.body.dataset.firstFrame === "true", {
+      await page.waitForFunction(() => document.body.dataset.firstFrame === "true", undefined, {
         timeout: 60_000,
       });
       await page.waitForFunction(
         () =>
           document.body.dataset.readyChooser === "true" ||
           document.body.dataset.phase === "choosing",
-        { timeout: 120_000 },
-      );
+        undefined,
+    { timeout: 120_000 },
+    );
       const marks = await page.evaluate(() => ({
         firstFrame: document.body.dataset.firstFrame,
         readyChooser: document.body.dataset.readyChooser,
@@ -130,7 +131,7 @@ describe("startup lifecycle", () => {
       await gotoAndWaitChooser(page, "?seed=42&renderTest");
       // single activation: Fly immediately on the pre-selected Nature
       await page.click("#fly");
-      await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+      await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
         timeout: 120_000,
       });
       expect(errs.pageErrors).toEqual([]);
