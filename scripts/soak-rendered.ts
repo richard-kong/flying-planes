@@ -4,7 +4,7 @@
 // and LOD transitions using the normal input mappers. Records rendered frame intervals,
 // page errors, and pool/manifest counts every 10 s, and exits nonzero on any failure.
 //
-//   npm run soak:rendered -- --minutes 60 --seed 42 --theme alien --headed
+//   npm run soak:rendered -- --minutes 60 --seed 42 --theme alien --aircraft fighter --headed
 //
 // Owner-device runs report wall-clock acceptance; the VM run under SwiftShader measures
 // correctness invariants (determinism, leaks, errors), not frame-rate budgets.
@@ -16,27 +16,33 @@ import {
   launchChromium,
   serveVerification,
 } from "./browser-harness";
+import { AIRCRAFT_ORDER, DEFAULT_AIRCRAFT, type AircraftTypeId } from "../src/sim/aircraft";
 
 interface Args {
   minutes: number;
   seed: number;
   theme: "nature" | "alien" | "arctic";
+  aircraft: AircraftTypeId;
   headed: boolean;
   out: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { minutes: 60, seed: 42, theme: "alien", headed: false, out: "soak-report.json" };
+  const args: Args = { minutes: 60, seed: 42, theme: "alien", aircraft: DEFAULT_AIRCRAFT, headed: false, out: "soak-report.json" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--minutes") args.minutes = Number(argv[++i]);
     else if (a === "--seed") args.seed = Number(argv[++i]);
     else if (a === "--theme") args.theme = argv[++i] as Args["theme"];
+    else if (a === "--aircraft") args.aircraft = argv[++i] as Args["aircraft"];
     else if (a === "--headed") args.headed = true;
     else if (a === "--out") args.out = argv[++i];
   }
   if (!["nature", "alien", "arctic"].includes(args.theme)) {
     throw new Error(`--theme must be nature|alien|arctic, got ${args.theme}`);
+  }
+  if (!AIRCRAFT_ORDER.includes(args.aircraft)) {
+    throw new Error(`--aircraft must be ${AIRCRAFT_ORDER.join("|")}, got ${args.aircraft}`);
   }
   return args;
 }
@@ -92,7 +98,7 @@ try {
     (window as unknown as { __frameTimes: number[] }).__frameTimes = times;
   });
 
-  await page.goto(`${server.url}/?seed=${args.seed}&renderTest=1`);
+  await page.goto(`${server.url}/?seed=${args.seed}&renderTest=1&aircraft=${args.aircraft}`);
   await page.waitForFunction(() => document.body.dataset.phase === "choosing", {
     timeout: 120_000,
   });
