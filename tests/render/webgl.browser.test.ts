@@ -154,10 +154,20 @@ describe("aircraft render smoke", () => {
     const port = await freePort();
     dev = await createServer({
       server: { host: "127.0.0.1", port, strictPort: true },
+      optimizeDeps: { include: ["three"] },
       logLevel: "error",
     });
     await dev.listen();
     devBase = `http://127.0.0.1:${port}`;
+    // cold dep cache (CI): the optimizer bundles three asynchronously — the injected
+    // imports 404 until it finishes, so wait for the deps URL to exist
+    const depsDeadline = Date.now() + 60_000;
+    for (;;) {
+      const res = await fetch(`${devBase}/node_modules/.vite/deps/three.js`);
+      if (res.ok) break;
+      if (Date.now() > depsDeadline) throw new Error("vite optimizeDeps never served three.js");
+      await new Promise((r) => setTimeout(r, 500));
+    }
     devPage = await browser!.newPage({ viewport: { width: 640, height: 360 } });
     devPage.on("pageerror", (err) => devErrors.push(String(err)));
   }, 120_000);
