@@ -92,6 +92,14 @@
         color: #aab2c8;
         font-size: 14px;
       }
+      .chooser-panel h2 {
+        margin: 20px 0 12px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9aa4c0;
+      }
       .cards {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -181,6 +189,11 @@
         display: flex;
         gap: 12px;
         margin-top: 18px;
+        position: sticky;
+        bottom: 0;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(14, 17, 30, 0.92);
       }
       .actions button {
         min-height: 44px;
@@ -245,37 +258,93 @@
   <body>
     <canvas id="scene"></canvas>
     <p id="hint">move to steer, scroll or pinch for speed</p>
-    <button id="change-theme" hidden>Change theme</button>
+    <button id="change-theme" hidden>Change flight</button>
     <div id="chooser" role="dialog" aria-modal="true" aria-labelledby="chooser-title" hidden>
       <div class="chooser-panel">
-        <h1 id="chooser-title">Choose your world</h1>
-        <p class="sub">Pick a landscape, then press Fly.</p>
-        <div class="cards" role="radiogroup" aria-label="World">
-          <label class="card">
-            <input type="radio" name="theme" value="nature" checked />
-            <img data-theme-img="nature" alt="" />
-            <span class="img-fallback" data-theme-fallback="nature">preview unavailable</span>
-            <span class="badge" aria-hidden="true">Selected</span>
-            <span class="name">Nature</span>
-            <span class="desc">Rolling green foothills, limestone lakes and white peaks under a clear day.</span>
-          </label>
-          <label class="card">
-            <input type="radio" name="theme" value="alien" />
-            <img data-theme-img="alien" alt="" />
-            <span class="img-fallback" data-theme-fallback="alien">preview unavailable</span>
-            <span class="badge" aria-hidden="true">Selected</span>
-            <span class="name">Alien Planet</span>
-            <span class="desc">Violet ridges under a pastel dawn, with gold lakes and lavender fog.</span>
-          </label>
-          <label class="card">
-            <input type="radio" name="theme" value="arctic" />
-            <img data-theme-img="arctic" alt="" />
-            <span class="img-fallback" data-theme-fallback="arctic">preview unavailable</span>
-            <span class="badge" aria-hidden="true">Selected</span>
-            <span class="name">Arctic</span>
-            <span class="desc">Blue glacier basins, frozen lakes and sculpted snow ridges.</span>
-          </label>
-        </div>
+        <h1 id="chooser-title">Choose your flight</h1>
+        <p class="sub">Pick a landscape and an aircraft, then press Fly.</p>
+        <section>
+          <h2>World</h2>
+          <div class="cards" role="radiogroup" aria-label="World">
+            <label class="card">
+              <input type="radio" name="theme" value="nature" checked />
+              <img data-theme-img="nature" alt="" />
+              <span class="img-fallback" data-theme-fallback="nature">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Nature</span>
+              <span class="desc">Rolling green foothills, limestone lakes and white peaks under a clear day.</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="theme" value="alien" />
+              <img data-theme-img="alien" alt="" />
+              <span class="img-fallback" data-theme-fallback="alien">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Alien Planet</span>
+              <span class="desc">Violet ridges under a pastel dawn, with gold lakes and lavender fog.</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="theme" value="arctic" />
+              <img data-theme-img="arctic" alt="" />
+              <span class="img-fallback" data-theme-fallback="arctic">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Arctic</span>
+              <span class="desc">Blue glacier basins, frozen lakes and sculpted snow ridges.</span>
+            </label>
+          </div>
+        </section>
+        <section>
+          <h2>Aircraft</h2>
+          <div class="cards" role="radiogroup" aria-label="Aircraft">
+            <label class="card">
+              <input type="radio" name="aircraft" value="helicopter" />
+              <img data-aircraft-img="helicopter" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="helicopter">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Executive</span>
+              <span class="desc">Teardrop cabin · tapered boom · shrouded tail rotor · white and blue</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="aircraft" value="light" checked />
+              <img data-aircraft-img="light" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="light">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Classic trainer</span>
+              <span class="desc">Strut-braced high wing · tricycle gear · swept fin · white with red cheatline</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="aircraft" value="fighter" />
+              <img data-aircraft-img="fighter" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="fighter">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Interceptor</span>
+              <span class="desc">Long nose · thin swept wings · tall fin · white with day-glo orange</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="aircraft" value="airliner" />
+              <img data-aircraft-img="airliner" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="airliner">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Narrow-body</span>
+              <span class="desc">Classic twin-jet · small winglets · white with blue cheatline and tail</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="aircraft" value="biplane" />
+              <img data-aircraft-img="biplane" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="biplane">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Sport</span>
+              <span class="desc">Compact body · N struts · tight gap · silver with red tail</span>
+            </label>
+            <label class="card">
+              <input type="radio" name="aircraft" value="glider" />
+              <img data-aircraft-img="glider" alt="" />
+              <span class="img-fallback" data-aircraft-fallback="glider">preview unavailable</span>
+              <span class="badge" aria-hidden="true">Selected</span>
+              <span class="name">Vintage</span>
+              <span class="desc">Gull wings · conventional tail · long canopy · cream and walnut brown</span>
+            </label>
+          </div>
+        </section>
         <div class="actions">
           <button id="fly" type="button">Fly</button>
           <button id="cancel" type="button" hidden>Cancel</button>
