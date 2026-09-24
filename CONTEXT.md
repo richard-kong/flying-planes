@@ -8,13 +8,25 @@ procedurally generated landscapes. This is the only context in the repo.
 ### Flight
 
 **Flight**:
-A continuous run of the Plane in one Theme and Seed. A pause preserves the run; a restart
-begins a new one.
+A continuous run of the Plane in one Theme, Seed and Aircraft Type. A pause preserves the
+run; a restart begins a new one.
 _Avoid_: game, level, round
 
 **Plane**:
-The single aircraft the user flies. There is exactly one per session.
+The single aircraft the user flies. There is exactly one per session. Its appearance is set
+by its Aircraft Type; the term Plane covers every type including helicopter and glider.
 _Avoid_: aircraft, player, ship
+
+**Aircraft Type**:
+The Plane's selected visual design: one of helicopter, light plane, fighter jet, passenger
+jet, biplane or glider. Aircraft Type changes appearance only; every type flies the same
+Flight Model.
+_Avoid_: model, skin, livery
+
+**Spinner**:
+A propeller or rotor pivot on an Aircraft Type's mesh, driven by a shared spin phase that
+advances only during active flight and freezes on pause.
+_Avoid_: animation, motor
 
 **Flight Model**:
 The pure function that turns a Steer Vector, Throttle, and elapsed time into the Plane's next
@@ -55,10 +67,11 @@ A complete world preset combining terrain character, regional variation, surface
 sky, fog, and lighting; feature 002 specifies Nature, Alien Planet, and Arctic.
 _Avoid_: biome, skin, filter
 
-**Theme Chooser**:
-The view for selecting a Theme before starting or restarting a Flight. A pending choice is
-separate from the active Flight's Theme.
-_Avoid_: settings, biome picker, theme editor
+**Flight Chooser**:
+The view for selecting Theme and Aircraft Type before starting or restarting a Flight, in
+two labelled sections (World and Aircraft) with one Fly/Cancel bar. Each pending choice is
+separate from the active Flight's selections.
+_Avoid_: settings, theme chooser, aircraft picker
 
 **Terrain Chunk**:
 A fixed-size square tile of terrain, generated on demand around the Plane and discarded when
@@ -96,7 +109,7 @@ _Avoid_: tile cache, streaming map
 ### Session
 
 **Flight Snapshot**:
-The small flat record captured once when a Flight pauses for the Theme Chooser: plane,
+The small flat record captured once when a Flight pauses for the Flight Chooser: plane,
 previous plane, camera pose pair, sim clock, accumulator, saved Throttle/activity, Autopilot,
 hint progress and the bounded chunk manifest. It is owned by the session runtime, holds no
 GPU resources, and is discarded only when a later Fly or restore commits.

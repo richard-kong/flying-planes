@@ -95,7 +95,7 @@ describe("world switching resources (T044)", () => {
     await page.waitForFunction(() => document.body.dataset.phase === "preparing");
     // buffers are only reused after cancelPreparation acknowledges (synchronous in world.ts)
     await page.click("#cancel");
-    await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+    await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
       timeout: 120_000,
     });
     const after = await manifest();
@@ -120,7 +120,7 @@ describe("world switching resources (T044)", () => {
     await page.keyboard.press("Escape").catch(() => {});
     // the hidden Cancel can still be dispatched directly — the session must reject it
     await page.evaluate(() => document.getElementById("cancel")!.click());
-    await page.waitForFunction(() => document.body.dataset.phase === "flying", {
+    await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined, {
       timeout: 120_000,
     });
     const g1 = (await stats()).sessionGen;

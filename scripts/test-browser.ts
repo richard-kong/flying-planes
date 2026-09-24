@@ -20,7 +20,8 @@ try {
   await assertWebGL2();
 
   process.env.BROWSER_BASE_URL = server.url;
-  const vitest = await startVitest("test", [], {
+  // optional filename filters: `npm run test:browser -- chooser switching`
+  const vitest = await startVitest("test", process.argv.slice(2), {
     watch: false,
     config: "vitest.browser.config.ts",
   });

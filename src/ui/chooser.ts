@@ -1,26 +1,35 @@
-// DOM adapter for the Theme chooser (002 T024/T030): a native-radio modal that emits
-// lifecycle events — it never steers, throttles, or touches renderer state. Session
-// transitions live in sim/session.ts; this file only reflects ChooserState into the DOM
-// and reports user intent back. Busy states disable Fly/Cancel/selection without trapping
-// focus; Escape acts as Cancel only when the session allows it.
+// DOM adapter for the Flight chooser (002 T024/T030; Aircraft section added in 003 T016):
+// a native-radio modal that emits lifecycle events — it never steers, throttles, or touches
+// renderer state. Session transitions live in sim/session.ts; this file only reflects
+// ChooserState into the DOM and reports user intent back. Busy states disable
+// Fly/Cancel/selection without trapping focus; Escape acts as Cancel only when the session
+// allows it.
 import type { ThemeId } from "../sim/themes";
+import { AIRCRAFT_ORDER, type AircraftTypeId } from "../sim/aircraft";
 import { cancelOffered, isBusy, type ChooserState } from "../sim/session";
 
 export interface ChooserCallbacks {
   onSelect(id: ThemeId): void;
+  onSelectAircraft(id: AircraftTypeId): void;
   onFly(): void;
   onCancel(): void;
   onRetry(): void;
 }
 
+/** Card address shared with the preview pipeline: a ThemeId or an AircraftTypeId. */
+export interface PreviewCardKey {
+  kind: "theme" | "aircraft";
+  id: string;
+}
+
 export interface ChooserHandle {
-  /** Reflect a session state into the DOM (phase, selection, busy, errors, Cancel). */
+  /** Reflect a session state into the DOM (phase, selections, busy, errors, Cancel). */
   sync(state: ChooserState): void;
   open(): void;
   close(): void;
   readonly isOpen: boolean;
   /** Attach a decoded card image URL (or mark the card failed). */
-  setCardImage(id: ThemeId, url: string | null, failed?: boolean): void;
+  setCardImage(card: PreviewCardKey, url: string | null, failed?: boolean): void;
   setStatus(text: string): void;
   focus(): void;
 }
@@ -34,22 +43,53 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
   const cancelBtn = document.getElementById("cancel") as HTMLButtonElement;
   const statusEl = document.getElementById("chooser-status") as HTMLElement;
   const errorEl = document.getElementById("chooser-error") as HTMLElement;
-  const radios = new Map<ThemeId, HTMLInputElement>();
-  const images = new Map<ThemeId, HTMLImageElement>();
-  const fallbacks = new Map<ThemeId, HTMLElement>();
+  const themeRadios = new Map<ThemeId, HTMLInputElement>();
+  const themeImages = new Map<string, HTMLImageElement>();
+  const themeFallbacks = new Map<string, HTMLElement>();
   for (const id of THEME_ORDER) {
-    radios.set(id, root.querySelector(`input[value="${id}"]`) as HTMLInputElement);
-    images.set(id, root.querySelector(`img[data-theme-img="${id}"]`) as HTMLImageElement);
-    fallbacks.set(id, root.querySelector(`[data-theme-fallback="${id}"]`) as HTMLElement);
+    themeRadios.set(
+      id,
+      root.querySelector(`input[name="theme"][value="${id}"]`) as HTMLInputElement,
+    );
+    themeImages.set(
+      id,
+      root.querySelector(`img[data-theme-img="${id}"]`) as HTMLImageElement,
+    );
+    themeFallbacks.set(
+      id,
+      root.querySelector(`[data-theme-fallback="${id}"]`) as HTMLElement,
+    );
+  }
+  const aircraftRadios = new Map<AircraftTypeId, HTMLInputElement>();
+  const aircraftImages = new Map<string, HTMLImageElement>();
+  const aircraftFallbacks = new Map<string, HTMLElement>();
+  for (const id of AIRCRAFT_ORDER) {
+    aircraftRadios.set(
+      id,
+      root.querySelector(`input[name="aircraft"][value="${id}"]`) as HTMLInputElement,
+    );
+    aircraftImages.set(
+      id,
+      root.querySelector(`img[data-aircraft-img="${id}"]`) as HTMLImageElement,
+    );
+    aircraftFallbacks.set(
+      id,
+      root.querySelector(`[data-aircraft-fallback="${id}"]`) as HTMLElement,
+    );
   }
 
   let open = false;
   let lastFocused: Element | null = null;
   let cancelAllowed = false;
 
-  radios.forEach((input, id) => {
+  themeRadios.forEach((input, id) => {
     input.addEventListener("change", () => {
       if (input.checked) cb.onSelect(id);
+    });
+  });
+  aircraftRadios.forEach((input, id) => {
+    input.addEventListener("change", () => {
+      if (input.checked) cb.onSelectAircraft(id);
     });
   });
   flyBtn.addEventListener("click", () => cb.onFly());
@@ -96,8 +136,9 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
       open = true;
       lastFocused = document.activeElement;
       root.hidden = false;
-      // move focus into the dialog — Fly is the primary action
-      flyBtn.focus();
+      // move focus into the dialog — Fly is the primary action; while it is disabled
+      // (booting, preparing) the dialog root takes focus instead
+      (flyBtn.disabled ? root : flyBtn).focus();
     },
 
     close() {
@@ -112,15 +153,22 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
     sync(state: ChooserState) {
       const busy = isBusy(state);
       panel.classList.toggle("chooser-busy", busy);
-      const sel = radios.get(state.selection);
+      const sel = themeRadios.get(state.selection);
       if (sel && !sel.checked) sel.checked = true;
-      flyBtn.disabled = busy;
+      const selAircraft = aircraftRadios.get(state.aircraftSelection);
+      if (selAircraft && !selAircraft.checked) selAircraft.checked = true;
+      // session isBusy excludes booting (previews aren't an operation) but the chooser
+      // is inert until its cards resolve
+      flyBtn.disabled = busy || state.phase === "booting";
       // offered during preparing too — a mid-prep Cancel abandons the candidate and
       // rebuilds the paused world; disabled only while the rebuild itself runs
       cancelAllowed = cancelOffered(state);
       cancelBtn.hidden = !cancelAllowed;
       cancelBtn.disabled = state.phase === "restoring";
-      radios.forEach((r) => {
+      themeRadios.forEach((r) => {
+        r.disabled = busy;
+      });
+      aircraftRadios.forEach((r) => {
         r.disabled = busy;
       });
       if (state.error) {
@@ -132,9 +180,9 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
       }
     },
 
-    setCardImage(id: ThemeId, url: string | null, failed = false) {
-      const img = images.get(id);
-      const fb = fallbacks.get(id);
+    setCardImage(card: PreviewCardKey, url: string | null, failed = false) {
+      const img = (card.kind === "theme" ? themeImages : aircraftImages).get(card.id);
+      const fb = (card.kind === "theme" ? themeFallbacks : aircraftFallbacks).get(card.id);
       if (!img || !fb) return;
       if (url) {
         img.src = url;
@@ -155,7 +203,7 @@ export function createChooser(cb: ChooserCallbacks): ChooserHandle {
     },
 
     focus() {
-      flyBtn.focus();
+      (flyBtn.disabled ? root : flyBtn).focus();
     },
   };
 }

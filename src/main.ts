@@ -4,7 +4,7 @@
 // the opaque overlay and commits terrain/surface/sky/fog/pose atomically. Flight listeners
 // live on the canvas and only apply while the session is flying; every menu boundary closes
 // the fresh-input gate.
-import { PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
+import { Box3, Color, PerspectiveCamera, Scene, Sphere, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
 import {
   CHUNK_SIZE,
   CHUNKS_PER_FRAME,
@@ -44,12 +44,25 @@ import {
   pressFly,
   restoreFailed,
   restoreReady,
+  selectAircraft,
   selectTheme,
   SNAPSHOT_MANIFEST_CAP,
   type ChooserState,
   type FlightSnapshot,
 } from "./sim/session";
-import { createPlaneMesh } from "./render/plane";
+import {
+  AIRCRAFT,
+  aircraftById,
+  stepSpin,
+  type AircraftTypeId,
+} from "./sim/aircraft";
+import {
+  applyThemeToLights,
+  buildAircraft,
+  createAircraftLights,
+  disposeAircraft,
+  type Aircraft,
+} from "./render/aircraft";
 import { applyThemeToSky, createSkyMesh, updateSkyMesh } from "./render/sky";
 import { applyThemeToMaterial, createTerrainMaterial } from "./render/terrainMaterial";
 import { createWorldRuntime, type PreparationJob } from "./render/world";
@@ -58,6 +71,7 @@ import {
   disposePreviewSet,
   PREVIEW_H,
   PREVIEW_W,
+  previewCardKey,
   renderNextPreview,
   renderOverviewShot,
   retryFailedPreviews,
@@ -85,8 +99,33 @@ const scene = new Scene();
 // far plane covers the full view disc; fog is fully opaque well inside it (R9)
 const camera = new PerspectiveCamera(60, 1, 0.1, CHUNK_SIZE * (VIEW_RINGS + 2));
 
-const plane = createPlaneMesh();
-scene.add(plane);
+// All six Aircraft Types are built once at boot (allocation lives here, never per frame);
+// `active` is the committed one, `plane` aliases its group so pose writes stay unchanged.
+const aircraftByType = new Map<AircraftTypeId, Aircraft>();
+for (const t of AIRCRAFT) {
+  const a = buildAircraft(t);
+  a.group.visible = false;
+  scene.add(a.group);
+  aircraftByType.set(t.id, a);
+}
+const aircraftLights = createAircraftLights();
+scene.add(aircraftLights.hemi, aircraftLights.sun);
+let active: Aircraft = aircraftByType.get("light") as Aircraft;
+// cached with `active` so the frame loop never looks the record up (zero per-frame allocation)
+let activeSpinSpecs = aircraftById(active.type).spinners;
+let plane = active.group;
+active.group.visible = true;
+let spinPhase = 0;
+
+function switchAircraft(id: AircraftTypeId): void {
+  const next = aircraftByType.get(id) as Aircraft;
+  if (next === active) return;
+  active.group.visible = false;
+  active = next;
+  activeSpinSpecs = aircraftById(active.type).spinners;
+  plane = active.group;
+  active.group.visible = true;
+}
 
 const sky = createSkyMesh();
 scene.add(sky);
@@ -98,9 +137,15 @@ const planePosUniform = terrainMaterial.uniforms.uPlanePos.value as Vector2;
 
 // --- Session + boot world (Nature stationary background, contract: booting -> choosing) ---
 const session: ChooserState = createSession(seed);
+// Verification builds may preselect the pending aircraft for soak/audit runs.
+if (__VERIFY_HOOKS__) {
+  const a = new URLSearchParams(location.search).get("aircraft") as AircraftTypeId | null;
+  if (a) session.aircraftSelection = a;
+}
 const bootWorld: WorldContext = { theme: themeById("nature"), seed };
 applyThemeToMaterial(terrainMaterial, bootWorld.theme);
 applyThemeToSky(sky, bootWorld.theme);
+applyThemeToLights(aircraftLights, bootWorld.theme);
 const world = createWorldRuntime(scene, terrainMaterial, bootWorld);
 
 // Preview card renders stage their theme on the SHARED terrain material; this puts the
@@ -179,6 +224,8 @@ function makeSnapshotStorage(): FlightSnapshot {
     inputSeen: false,
     hintHidden: false,
     hintOpacity: 1,
+    aircraftType: "light",
+    spinPhase: 0,
     chunkManifest: [],
   };
 }
@@ -202,12 +249,17 @@ function takeSnapshot(): FlightSnapshot {
   // freeze the hint fade exactly where it is; -1 when the element is gone/measureless
   s.hintOpacity = hintEl ? Number(getComputedStyle(hintEl).opacity) : 1;
   s.themeId = session.active ?? "nature";
+  s.aircraftType = active.type;
+  s.spinPhase = spinPhase;
   s.seed = session.seed;
   world.manifest(SNAPSHOT_MANIFEST_CAP, s.chunkManifest);
   return s;
 }
 
 function applySnapshot(s: FlightSnapshot): void {
+  // swap the visible aircraft before pose copy — `plane` tracks the active group
+  switchAircraft(s.aircraftType);
+  spinPhase = s.spinPhase;
   copyPlaneState(curr, s.plane);
   copyPlaneState(prev, s.prev);
   copyCameraPose(pose, s.pose);
@@ -244,10 +296,14 @@ const chooser = createChooser({
     selectTheme(session, id);
     chooser.sync(session);
   },
+  onSelectAircraft(id) {
+    selectAircraft(session, id);
+    chooser.sync(session);
+  },
   onFly() {
     const req = pressFly(session);
     if (!req) return;
-    launch(req.themeId, req.generation, req.kind);
+    launch(req.themeId, req.generation, req.kind, req.aircraftType);
   },
   onCancel() {
     cancelOrResume();
@@ -272,6 +328,7 @@ const PREP_DEADLINE_MS = 7; // per-frame slice budget; leaves headroom inside a 
 function freshFlight(w: WorldContext): void {
   curr = createPlaneState(w);
   prev = createPlaneState(w);
+  spinPhase = 0;
   initCameraPose(pose, curr, w);
   posePrev.position.copy(pose.position);
   posePrev.target.copy(pose.target);
@@ -296,7 +353,7 @@ function freshFlight(w: WorldContext): void {
   hintEl?.classList.remove("hidden");
 }
 
-function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch" | "restore"): void {
+function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch" | "restore", aircraftType: AircraftTypeId): void {
   const theme = themeById(themeId);
   const targetWorld: WorldContext = { theme, seed: session.seed };
   // stage a launch anchor from a probe plane state so coverage starts where the
@@ -316,6 +373,7 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
     const job: PreparationJob = {
       generation,
       themeId,
+      aircraftType,
       seed: session.seed,
       kind,
       phase: "terrain",
@@ -339,6 +397,9 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
       } catch {
         // card-level failure is non-fatal for launch; retry stays available
       }
+      for (const card of previewSet.cards) {
+        chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
+      }
       begin();
     })();
   } else {
@@ -355,20 +416,23 @@ const previewTarget = new WebGLRenderTarget(PREVIEW_W, PREVIEW_H, {
   format: RGBAFormat,
   generateMipmaps: false,
 });
-const previewSet = createPreviewSet();
+const previewSet = createPreviewSet(aircraftByType);
 
 let previewsStarted = false;
 async function runPreviews(): Promise<void> {
-  for (let i = 0; i < previewSet.cards.length; i++) {
+  let rendered = 0;
+  for (;;) {
+    const card = previewSet.cards.find((c) => c.status === "pending");
+    if (!card) break;
     try {
       await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
     } catch {
       // renderNextPreview marks the card failed itself; keep pumping
     }
-    const card = previewSet.cards[i];
-    chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+    rendered += 1;
+    chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
     if (session.phase === "booting") {
-      chooser.setStatus(`Rendering previews… ${i + 1}/3`);
+      chooser.setStatus(`Rendering previews… ${rendered}/${previewSet.cards.length}`);
     }
     // keep the rAF loop alive between cards — never block boot on a card burst
     await new Promise((r) => requestAnimationFrame(r));
@@ -430,6 +494,7 @@ function cancelOrResume(): void {
   const job: PreparationJob = {
     generation: session.generation,
     themeId: snap.themeId,
+    aircraftType: snap.aircraftType,
     seed: session.seed,
     kind: "restore",
     phase: "terrain",
@@ -464,7 +529,7 @@ function retryFailed(): void {
         /* per-card status already set */
       }
       for (const card of previewSet.cards) {
-        chooser.setCardImage(card.themeId, card.url, card.status === "failed");
+        chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
       }
       if (previewSet.done) {
         session.error = null;
@@ -480,7 +545,7 @@ function retryFailed(): void {
   }
   // launch failure: Fly again on the retained selection
   const req = pressFly(session);
-  if (req) launch(req.themeId, req.generation, req.kind);
+  if (req) launch(req.themeId, req.generation, req.kind, req.aircraftType);
 }
 
 // --- Change theme: pause in place (T049) ---
@@ -709,7 +774,53 @@ if (__VERIFY_HOOKS__) {
   (globalThis as { __verifyOverview?: (id: ThemeId, w: number, h: number) => Promise<string> })
     .__verifyOverview = (id, w, h) =>
     renderOverviewShot(renderer, terrainMaterial, id, w, h, restoreLiveTheme);
+  (globalThis as { __verifyAircraftKit?: () => unknown }).__verifyAircraftKit = () => ({
+    WebGLRenderer,
+    Scene,
+    PerspectiveCamera,
+    Box3,
+    Vector3,
+    Color,
+    Sphere,
+    buildAircraft,
+    disposeAircraft,
+    createAircraftLights,
+    applyThemeToLights,
+    aircraftById,
+    themeById,
+  });
+  (globalThis as { __verifyAircraft?: () => unknown }).__verifyAircraft = () => {
+    const g = active.group;
+    g.updateWorldMatrix(true, true);
+    const bb = new Box3().setFromObject(g);
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      verifyCorner.set(
+        i & 1 ? bb.max.x : bb.min.x,
+        i & 2 ? bb.max.y : bb.min.y,
+        i & 4 ? bb.max.z : bb.min.z,
+      );
+      verifyCorner.project(camera);
+      const sx = ((verifyCorner.x + 1) / 2) * innerWidth;
+      const sy = ((1 - verifyCorner.y) / 2) * innerHeight;
+      if (sx < left) left = sx;
+      if (sx > right) right = sx;
+      if (sy < top) top = sy;
+      if (sy > bottom) bottom = sy;
+    }
+    return {
+      type: active.type,
+      visible: g.visible,
+      spinPhase,
+      box: { left, top, right, bottom },
+    };
+  };
 }
+
+const verifyCorner = new Vector3();
 
 function frame(now: number): void {
   let elapsed = (now - lastNow) / 1000;
@@ -751,6 +862,7 @@ function frame(now: number): void {
       const theme = themeById(job.themeId);
       applyThemeToMaterial(terrainMaterial, theme);
       applyThemeToSky(sky, theme);
+      applyThemeToLights(aircraftLights, theme);
       if (!world.commitPreparation(job)) {
         liveJob = null;
         prepOverlay.hidden = true;
@@ -762,6 +874,7 @@ function frame(now: number): void {
         if (job.kind === "restore" && snapshot) {
           applySnapshot(snapshot);
         } else {
+          switchAircraft(job.aircraftType);
           freshFlight(world.world);
         }
         // T051: the paused snapshot dies only when a launch/restore lands atomically
@@ -791,12 +904,14 @@ function frame(now: number): void {
     let steps = 0;
     while (accumulator >= SIM_DT && steps < MAX_SIM_STEPS_PER_FRAME) {
       stepSim(SIM_DT);
+      spinPhase = stepSpin(spinPhase, SIM_DT);
       simTime += SIM_DT;
       accumulator -= SIM_DT;
       steps += 1;
     }
     if (steps === MAX_SIM_STEPS_PER_FRAME && accumulator > 0) {
       stepSim(accumulator);
+      spinPhase = stepSpin(spinPhase, accumulator);
       simTime += accumulator;
       accumulator = 0;
     }
@@ -820,6 +935,11 @@ function frame(now: number): void {
   if (session.phase !== "preparing" && session.phase !== "restoring") {
     // choosing keeps the paused world resident and streaming around its frozen pose
     world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
+  }
+
+  // Spinner pivots read the shared phase — frozen whenever the fixed-step loop is paused
+  for (let i = 0; i < active.spinners.length; i++) {
+    active.spinners[i].rotation[activeSpinSpecs[i].axis] = spinPhase * activeSpinSpecs[i].rate;
   }
 
   planePosUniform.set(plane.position.x, plane.position.z);
@@ -854,6 +974,7 @@ requestAnimationFrame(() => {
     previewsStarted = true;
     void runPreviews();
   }
-  chooser.open();
+  // sync before open() so disabled states (Fly during booting) are settled before focus
   syncChooser();
+  chooser.open();
 });

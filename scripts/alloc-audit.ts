@@ -2,7 +2,14 @@
 // warm pools while CDP HeapProfiler samples every allocation, then reports the per-site
 // byte totals attributable to application code. Constitution requires zero steady-state
 // frame allocations — this records the actual trace, not just a flat heap total.
+//   npx vite-node scripts/alloc-audit.ts [aircraft]   (default: light)
 import { buildVerificationBundle, freePort, launchChromium, serveVerification } from "./browser-harness";
+import { AIRCRAFT_ORDER, DEFAULT_AIRCRAFT, type AircraftTypeId } from "../src/sim/aircraft";
+
+const aircraft = (process.argv[2] ?? DEFAULT_AIRCRAFT) as AircraftTypeId;
+if (!AIRCRAFT_ORDER.includes(aircraft)) {
+  throw new Error(`aircraft must be ${AIRCRAFT_ORDER.join("|")}, got ${process.argv[2]}`);
+}
 
 const port = await freePort();
 await buildVerificationBundle();
@@ -11,10 +18,14 @@ const browser = await launchChromium();
 
 try {
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
-  await page.goto(`${server.url}/?seed=42&renderTest=1`);
-  await page.waitForFunction(() => document.body.dataset.phase === "choosing", { timeout: 120_000 });
+  await page.goto(`${server.url}/?seed=42&renderTest=1&aircraft=${aircraft}`);
+  await page.waitForFunction(() => document.body.dataset.phase === "choosing", undefined,
+    { timeout: 120_000 },
+    );
   await page.click("#fly"); // Nature default
-  await page.waitForFunction(() => document.body.dataset.phase === "flying", { timeout: 120_000 });
+  await page.waitForFunction(() => document.body.dataset.phase === "flying", undefined,
+    { timeout: 120_000 },
+    );
   // warm-up: let pools reach their high-water marks before sampling
   await page.mouse.move(480, 240);
   for (let i = 0; i < 24; i++) await page.mouse.wheel(0, -120);

@@ -1,51 +1,35 @@
-// Throwaway visual study for 003: five procedural design directions for each of the six
-// Aircraft Types, selected with ?variant=&view=. Geometry is built from lofted rings,
-// so no model or texture assets are involved. Aircraft are normalised to one screen footprint.
+// Aircraft builders (003 T006): the six approved design directions from the visual study
+// (H3 Executive, L1 Classic trainer, F5 Interceptor, P1 Narrow-body, B4 Sport, G2 Vintage),
+// keyed by AircraftTypeId. Geometry is built from lofted rings, so no model or texture
+// assets are involved. buildAircraft normalises every aircraft to PLANE_FOOTPRINT metres,
+// centres it on the airframe bounding box (rotor/propeller discs excluded), forward +Z,
+// up +Y, and returns the spinner pivots that main.ts rotates from the shared spin phase.
+// Allocates at boot only — nothing here runs per frame.
 import {
+  Box3,
   BoxGeometry,
   BufferGeometry,
-  Color,
   CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   Float32BufferAttribute,
-  Fog,
   Group,
   HemisphereLight,
   Mesh,
   MeshLambertMaterial,
   MeshPhongMaterial,
-  NoToneMapping,
   Object3D,
-  PerspectiveCamera,
-  PlaneGeometry,
-  Quaternion,
-  Scene,
   SphereGeometry,
   TorusGeometry,
   Vector3,
-  WebGLRenderer,
-  Box3,
-  Sphere,
 } from "three";
-import { CAMERA_LOOK_AHEAD, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z, CAMERA_ROLL_FOLLOW, MAX_PITCH, MAX_ROLL } from "../constants";
-
-export type AircraftTypeId = "helicopter" | "light" | "fighter" | "airliner" | "biplane" | "glider";
-export type ViewId = "card" | "level" | "bank" | "detail";
+import { footprintScale, type AircraftType, type AircraftTypeId } from "../sim/aircraft";
+import type { Theme } from "../sim/themes";
 
 interface Paint {
   body: number;
   accent: number;
   trim: number;
-}
-
-interface Design {
-  id: string;
-  type: AircraftTypeId;
-  name: string;
-  description: string;
-  paint: Paint;
-  build: (m: Materials) => Group;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -58,7 +42,7 @@ interface Materials {
   glass: MeshPhongMaterial;
   metal: MeshPhongMaterial;
   rubber: MeshLambertMaterial;
-  blade: MeshLambertMaterial;
+  blade: MeshPhongMaterial;
 }
 
 function makeMaterials(paint: Paint): Materials {
@@ -68,10 +52,17 @@ function makeMaterials(paint: Paint): Materials {
     body: phong(paint.body, 28),
     accent: phong(paint.accent, 28),
     trim: phong(paint.trim, 20, 0x222222),
-    glass: phong(0x18344d, 110, 0xbbccdd),
+    glass: new MeshPhongMaterial({
+      color: 0x18344d,
+      shininess: 110,
+      specular: 0xbbccdd,
+      side: DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    }),
     metal: phong(0x9aa0a8, 70, 0x888888),
     rubber: new MeshLambertMaterial({ color: 0x1c1d20, side: DoubleSide }),
-    blade: new MeshLambertMaterial({ color: 0x2a2c30, side: DoubleSide }),
+    blade: phong(0x2a2c30, 40),
   };
 }
 
@@ -252,6 +243,8 @@ function propeller(z: number, y: number, radius: number, blades: number, m: Mate
     g.add(pivot);
   }
   g.position.set(0, y, z);
+  g.userData.rotor = true; // prop disc: excluded from the airframe bounding box
+  g.userData.spinner = "propeller";
   return g;
 }
 
@@ -269,6 +262,8 @@ function rotor(y: number, z: number, radius: number, blades: number, m: Material
     g.add(pivot);
   }
   g.position.set(0, y, z);
+  g.userData.rotor = true; // rotor disc: excluded from the airframe bounding box
+  g.userData.spinner = "mainRotor";
   return g;
 }
 
@@ -287,6 +282,8 @@ function tailRotor(x: number, y: number, z: number, radius: number, blades: numb
     g.add(pivot);
   }
   g.position.set(x, y, z);
+  g.userData.rotor = true; // rotor disc: excluded from the airframe bounding box
+  g.userData.spinner = "tailRotor";
   return g;
 }
 
@@ -397,9 +394,7 @@ function helicopter(
   if (o.sideWindows) g.add(windowRow(L * 0.05, -L * 0.3, H * 0.12, W * 0.5, 2, m, H * 0.3));
   // rotor mast and hub
   g.add(rod([0, H * 0.45, 0], [0, H * 0.5 + 0.55, 0], 0.12, m.trim));
-  const mainRotor = rotor(H * 0.5 + 0.6, 0, o.rotorRadius, o.blades, m);
-  mainRotor.userData.rotor = true;
-  g.add(mainRotor);
+  g.add(rotor(H * 0.5 + 0.6, 0, o.rotorRadius, o.blades, m));
   // tail boom
   const boomStart = -L * 0.6;
   const boomEnd = boomStart - o.boomLength;
@@ -923,156 +918,89 @@ function glider(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Design catalogue: five directions per type. Paint = body / accent / trim.
+// The six owner-approved directions (003 research §1), keyed by AircraftTypeId.
 
-export const DESIGNS: Design[] = [
-  // Helicopters
-  { id: "H1", type: "helicopter", name: "Bubble trainer", description: "Full bubble canopy · open lattice boom · two-blade rotor · slim skids", paint: { body: 0xe8552c, accent: 0xf4efe6, trim: 0x2b2f36 },
-    build: (m) => helicopter(m, { cabinLength: 3.6, cabinWidth: 1.7, cabinHeight: 1.7, boxy: 0, boomLength: 4.2, boomRadius: 0.16, boomRise: 0.3, rotorRadius: 4.6, blades: 2, finHeight: 0.8, stabiliser: false, bubble: 1, sideWindows: false, lattice: true, fenestron: false, skidWidth: 0.9 }) },
-  { id: "H2", type: "helicopter", name: "Utility", description: "Long side-windowed cabin · enclosed boom · four-blade rotor · stabiliser", paint: { body: 0x3f5a3a, accent: 0xd9c9a3, trim: 0x2b2f36 },
-    build: (m) => helicopter(m, { cabinLength: 5.2, cabinWidth: 1.9, cabinHeight: 1.9, boxy: 0.5, boomLength: 4.6, boomRadius: 0.36, boomRise: 0.35, rotorRadius: 5.6, blades: 4, finHeight: 1.1, stabiliser: true, bubble: 0.35, sideWindows: true, lattice: false, fenestron: false, skidWidth: 1.05 }) },
-  { id: "H3", type: "helicopter", name: "Executive", description: "Teardrop cabin · tapered boom · shrouded tail rotor · white and blue", paint: { body: 0xf3f4f2, accent: 0x2a4f9a, trim: 0x2b2f36 },
-    build: (m) => helicopter(m, { cabinLength: 4.8, cabinWidth: 1.8, cabinHeight: 1.75, boxy: 0.15, boomLength: 4.4, boomRadius: 0.34, boomRise: 0.55, rotorRadius: 5.2, blades: 4, finHeight: 1.45, stabiliser: true, bubble: 0.5, sideWindows: true, lattice: false, fenestron: true, skidWidth: 1.0 }) },
-  { id: "H4", type: "helicopter", name: "Rescue", description: "Boxy cabin · tall fin · three-blade rotor · red and white livery", paint: { body: 0xc8312b, accent: 0xf6f3ee, trim: 0x2b2f36 },
-    build: (m) => helicopter(m, { cabinLength: 5.0, cabinWidth: 2.1, cabinHeight: 2.0, boxy: 0.9, boomLength: 4.3, boomRadius: 0.4, boomRise: 0.4, rotorRadius: 5.4, blades: 3, finHeight: 1.6, stabiliser: true, bubble: 0.4, sideWindows: true, lattice: false, fenestron: false, skidWidth: 1.15 }) },
-  { id: "H5", type: "helicopter", name: "Light sport", description: "Compact glazed cabin · short boom · three-blade rotor · yellow and black", paint: { body: 0xf2c531, accent: 0x23252b, trim: 0x2b2f36 },
-    build: (m) => helicopter(m, { cabinLength: 3.9, cabinWidth: 1.6, cabinHeight: 1.65, boxy: 0.2, boomLength: 3.6, boomRadius: 0.24, boomRise: 0.25, rotorRadius: 4.4, blades: 3, finHeight: 0.95, stabiliser: false, bubble: 0.75, sideWindows: false, lattice: false, fenestron: false, skidWidth: 0.95 }) },
-
-  // Light planes
-  { id: "L1", type: "light", name: "Classic trainer", description: "Strut-braced high wing · tricycle gear · swept fin · white with red cheatline", paint: { body: 0xf5f3ee, accent: 0xc8312b, trim: 0x2b2f36 },
-    build: (m) => lightPlane(m, { length: 7.2, width: 1.35, noseRound: 0.3, cabinBoxy: 0.4, span: 5.3, chord: 1.55, taper: 0.7, struts: true, taildragger: false, finSweep: 0.5, finRound: false, tipUp: 0, wheelRadius: 0.24, cheatline: true, windowsBack: true }) },
-  { id: "L2", type: "light", name: "Bush taildragger", description: "Tandem cabin · rounded tail · tailwheel · fat tyres · yellow with black lightning trim", paint: { body: 0xf0c02f, accent: 0x23252b, trim: 0x2b2f36 },
-    build: (m) => lightPlane(m, { length: 6.8, width: 1.15, noseRound: 0.1, cabinBoxy: 0.7, span: 5.4, chord: 1.6, taper: 0.95, struts: true, taildragger: true, finSweep: 0.1, finRound: true, tipUp: 0, wheelRadius: 0.36, cheatline: false, windowsBack: true }) },
-  { id: "L3", type: "light", name: "Touring", description: "Rounded nose · long cabin · tapered wing · blue over white", paint: { body: 0x2b5fae, accent: 0xf4f4f0, trim: 0x2b2f36 },
-    build: (m) => lightPlane(m, { length: 7.8, width: 1.45, noseRound: 0.9, cabinBoxy: 0.1, span: 5.4, chord: 1.5, taper: 0.55, struts: false, taildragger: false, finSweep: 0.65, finRound: false, tipUp: 0, wheelRadius: 0.24, cheatline: true, windowsBack: true }) },
-  { id: "L4", type: "light", name: "STOL utility", description: "Boxy cabin · constant-chord wing · heavy struts · green and cream", paint: { body: 0x2f6b4f, accent: 0xefe6cf, trim: 0x2b2f36 },
-    build: (m) => lightPlane(m, { length: 7.4, width: 1.5, noseRound: 0.2, cabinBoxy: 1, span: 5.6, chord: 1.7, taper: 1, struts: true, taildragger: true, finSweep: 0.2, finRound: false, tipUp: 0, wheelRadius: 0.32, cheatline: false, windowsBack: true }) },
-  { id: "L5", type: "light", name: "Modern composite", description: "Smooth pod cabin · upturned wingtips · slim fin · silver with orange", paint: { body: 0xd8dbdf, accent: 0xef7d2a, trim: 0x2b2f36 },
-    build: (m) => lightPlane(m, { length: 7.0, width: 1.3, noseRound: 0.8, cabinBoxy: 0, span: 5.5, chord: 1.4, taper: 0.6, struts: false, taildragger: false, finSweep: 0.7, finRound: false, tipUp: 0.5, wheelRadius: 0.22, cheatline: true, windowsBack: false }) },
-
-  // Fighter jets
-  { id: "F1", type: "fighter", name: "Delta", description: "Single fin · pure delta wing · chin intake · air-superiority grey", paint: { body: 0x8b939c, accent: 0x6d757e, trim: 0x2b2f36 },
-    build: (m) => fighter(m, { length: 12.5, width: 1.6, wingSpan: 4.0, rootChord: 6.5, tipChord: 0.8, sweep: 5.2, wingZ: 2.6, twinFins: false, finHeight: 2.4, intakes: "chin", canards: false, twinExhaust: false, canopyLength: 2.6, stripe: false }) },
-  { id: "F2", type: "fighter", name: "Twin-tail", description: "Twin canted fins · side intakes · twin exhausts · dark grey with blue", paint: { body: 0x4a5561, accent: 0x2f6fb5, trim: 0x2b2f36 },
-    build: (m) => fighter(m, { length: 12.0, width: 1.7, wingSpan: 4.3, rootChord: 4.6, tipChord: 1.2, sweep: 3.0, wingZ: 1.6, twinFins: true, finHeight: 2.2, intakes: "side", canards: false, twinExhaust: true, canopyLength: 2.8, stripe: false }) },
-  { id: "F3", type: "fighter", name: "Classic swept", description: "Nose intake · mid swept wing · tall fin · bare metal with red flash", paint: { body: 0xb9bec4, accent: 0xc8312b, trim: 0x2b2f36 },
-    build: (m) => fighter(m, { length: 11.0, width: 1.5, wingSpan: 4.2, rootChord: 3.4, tipChord: 1.4, sweep: 2.2, wingZ: 1.4, twinFins: false, finHeight: 2.5, intakes: "nose", canards: false, twinExhaust: false, canopyLength: 2.2, stripe: true }) },
-  { id: "F4", type: "fighter", name: "Canard delta", description: "Canards ahead of a delta · single fin · side intakes · woodland camouflage green", paint: { body: 0x5b6b4a, accent: 0x3d4a35, trim: 0x2b2f36 },
-    build: (m) => fighter(m, { length: 12.0, width: 1.6, wingSpan: 4.1, rootChord: 5.6, tipChord: 0.9, sweep: 4.4, wingZ: 1.4, twinFins: false, finHeight: 2.3, intakes: "side", canards: true, twinExhaust: false, canopyLength: 2.4, stripe: false }) },
-  { id: "F5", type: "fighter", name: "Interceptor", description: "Long nose · thin swept wings · tall fin · white with day-glo orange", paint: { body: 0xf3f2ee, accent: 0xf26a1b, trim: 0x2b2f36 },
-    build: (m) => fighter(m, { length: 13.5, width: 1.5, wingSpan: 3.9, rootChord: 3.6, tipChord: 1.0, sweep: 2.8, wingZ: 0.6, twinFins: false, finHeight: 2.8, intakes: "side", canards: false, twinExhaust: true, canopyLength: 2.4, stripe: true }) },
-
-  // Passenger jets
-  { id: "P1", type: "airliner", name: "Narrow-body", description: "Classic twin-jet · small winglets · white with blue cheatline and tail", paint: { body: 0xf5f5f2, accent: 0x214f9e, trim: 0x2b2f36 },
-    build: (m) => airliner(m, { length: 22, radius: 1.35, span: 8.6, sweep: 2.9, winglet: 0.9, engineRadius: 0.75, windows: 14, cheatline: true, tailStripe: true, finHeight: 3.6, ovalWindows: false }) },
-  { id: "P2", type: "airliner", name: "Regional", description: "Short slim fuselage · straight-ish wing · small engines · red livery", paint: { body: 0xc8312b, accent: 0xf3f0ea, trim: 0x2b2f36 },
-    build: (m) => airliner(m, { length: 17, radius: 1.05, span: 7.6, sweep: 1.8, winglet: 0.5, engineRadius: 0.55, windows: 11, cheatline: false, tailStripe: true, finHeight: 3.1, ovalWindows: false }) },
-  { id: "P3", type: "airliner", name: "Wide-body", description: "Fat fuselage · big fans · long raked wings · white with teal tail", paint: { body: 0xf6f6f3, accent: 0x1f8a80, trim: 0x2b2f36 },
-    build: (m) => airliner(m, { length: 26, radius: 1.9, span: 11.5, sweep: 4.4, winglet: 0.6, engineRadius: 1.15, windows: 16, cheatline: false, tailStripe: true, finHeight: 4.4, ovalWindows: false }) },
-  { id: "P4", type: "airliner", name: "Retro", description: "Oval windows · bold cheatline · modest sweep · polished silver and red", paint: { body: 0xc9ced3, accent: 0xb8262c, trim: 0x2b2f36 },
-    build: (m) => airliner(m, { length: 20, radius: 1.3, span: 8.2, sweep: 2.2, winglet: 0, engineRadius: 0.62, windows: 12, cheatline: true, tailStripe: false, finHeight: 3.4, ovalWindows: true }) },
-  { id: "P5", type: "airliner", name: "Modern", description: "Tall blended winglets · large chevron nacelles · white with green", paint: { body: 0xf4f6f4, accent: 0x3f9d47, trim: 0x2b2f36 },
-    build: (m) => airliner(m, { length: 23, radius: 1.4, span: 9.4, sweep: 3.4, winglet: 1.6, engineRadius: 0.9, windows: 14, cheatline: false, tailStripe: true, finHeight: 3.7, ovalWindows: false }) },
-
-  // Biplanes
-  { id: "B1", type: "biplane", name: "Radial trainer", description: "Round radial cowl · two open cockpits · equal wings · yellow and blue", paint: { body: 0x2a4a8c, accent: 0xf2c531, trim: 0x2b2f36 },
-    build: (m) => biplane(m, { length: 6.6, width: 1.2, radial: true, span: 4.6, lowerSpan: 4.1, chord: 1.35, gap: 1.05, stagger: 0.3, nStruts: true, wheelRadius: 0.3, checker: false, twoSeat: true, finRound: true }) },
-  { id: "B2", type: "biplane", name: "Barnstormer", description: "Small lower wing · single cockpit · red with white checker upper wing", paint: { body: 0xc8312b, accent: 0xf6f3ee, trim: 0x2b2f36 },
-    build: (m) => biplane(m, { length: 6.2, width: 1.15, radial: true, span: 4.9, lowerSpan: 3.4, chord: 1.3, gap: 1.0, stagger: 0.45, nStruts: false, wheelRadius: 0.28, checker: true, twoSeat: false, finRound: true }) },
-  { id: "B3", type: "biplane", name: "Wartime scout", description: "Inline engine · flat nose · staggered wings · olive drab", paint: { body: 0x6b6d45, accent: 0x8a8c60, trim: 0x2b2f36 },
-    build: (m) => biplane(m, { length: 6.4, width: 1.05, radial: false, span: 4.5, lowerSpan: 4.3, chord: 1.4, gap: 1.1, stagger: 0.6, nStruts: false, wheelRadius: 0.3, checker: false, twoSeat: false, finRound: false }) },
-  { id: "B4", type: "biplane", name: "Sport", description: "Compact body · N struts · tight gap · silver with red tail", paint: { body: 0xd6d9dc, accent: 0xc8312b, trim: 0x2b2f36 },
-    build: (m) => biplane(m, { length: 5.8, width: 1.1, radial: false, span: 4.2, lowerSpan: 4.0, chord: 1.25, gap: 0.9, stagger: 0.35, nStruts: true, wheelRadius: 0.26, checker: false, twoSeat: false, finRound: false }) },
-  { id: "B5", type: "biplane", name: "Racer", description: "Narrow chord · wide gap · single seat · black and gold", paint: { body: 0x1e1f24, accent: 0xd8a63a, trim: 0x2b2f36 },
-    build: (m) => biplane(m, { length: 6.0, width: 1.0, radial: true, span: 4.4, lowerSpan: 4.0, chord: 1.05, gap: 1.2, stagger: 0.5, nStruts: false, wheelRadius: 0.24, checker: false, twoSeat: false, finRound: false }) },
-
-  // Gliders
-  { id: "G1", type: "glider", name: "Standard class", description: "T-tail · slim pod · long straight wings · white with red tips", paint: { body: 0xf7f7f5, accent: 0xd62d2d, trim: 0x2b2f36 },
-    build: (m) => glider(m, { length: 7.0, radius: 0.36, span: 7.6, chord: 0.85, tipChord: 0.42, dihedral: 0.35, gull: false, tTail: true, winglet: 0, canopyLength: 2.1, wingY: 0.05, tipColour: true, stripe: false }) },
-  { id: "G2", type: "glider", name: "Vintage", description: "Gull wings · conventional tail · long canopy · cream and walnut brown", paint: { body: 0xf0e8d8, accent: 0x6b4a2e, trim: 0x2b2f36 },
-    build: (m) => glider(m, { length: 7.4, radius: 0.4, span: 7.0, chord: 1.0, tipChord: 0.45, dihedral: 0.8, gull: true, tTail: false, winglet: 0, canopyLength: 2.4, wingY: 0.25, tipColour: false, stripe: true }) },
-  { id: "G3", type: "glider", name: "Open class", description: "Very long tapered wings · winglets · T-tail · white with blue", paint: { body: 0xf7f8fa, accent: 0x2b6fc4, trim: 0x2b2f36 },
-    build: (m) => glider(m, { length: 7.6, radius: 0.36, span: 9.2, chord: 0.8, tipChord: 0.32, dihedral: 0.5, gull: false, tTail: true, winglet: 0.5, canopyLength: 2.2, wingY: 0.05, tipColour: false, stripe: true }) },
-  { id: "G4", type: "glider", name: "Two-seat trainer", description: "Longer two-place canopy · mid wing · T-tail · white with yellow", paint: { body: 0xf6f5f0, accent: 0xf1c232, trim: 0x2b2f36 },
-    build: (m) => glider(m, { length: 8.0, radius: 0.42, span: 7.8, chord: 0.95, tipChord: 0.5, dihedral: 0.3, gull: false, tTail: true, winglet: 0, canopyLength: 3.0, wingY: 0.15, tipColour: true, stripe: true }) },
-  { id: "G5", type: "glider", name: "Club", description: "Low tail · high wing · rounded tips · light grey with orange", paint: { body: 0xdfe2e4, accent: 0xf07f2a, trim: 0x2b2f36 },
-    build: (m) => glider(m, { length: 6.8, radius: 0.38, span: 7.2, chord: 0.9, tipChord: 0.55, dihedral: 0.25, gull: false, tTail: false, winglet: 0, canopyLength: 2.0, wingY: 0.3, tipColour: true, stripe: false }) },
-];
-
-export const TYPE_LABELS: Record<AircraftTypeId, string> = {
-  helicopter: "Helicopter",
-  light: "Light Plane",
-  fighter: "Fighter Jet",
-  airliner: "Passenger Jet",
-  biplane: "Biplane",
-  glider: "Glider",
+const BUILDERS: Record<AircraftTypeId, { paint: Paint; build: (m: Materials) => Group }> = {
+  helicopter: {
+    paint: { body: 0xf3f4f2, accent: 0x2a4f9a, trim: 0x2b2f36 },
+    build: (m) =>
+      helicopter(m, { cabinLength: 4.8, cabinWidth: 1.8, cabinHeight: 1.75, boxy: 0.15, boomLength: 4.4, boomRadius: 0.34, boomRise: 0.55, rotorRadius: 5.2, blades: 4, finHeight: 1.45, stabiliser: true, bubble: 0.5, sideWindows: true, lattice: false, fenestron: true, skidWidth: 1.0 }),
+  },
+  light: {
+    paint: { body: 0xf5f3ee, accent: 0xc8312b, trim: 0x2b2f36 },
+    build: (m) =>
+      lightPlane(m, { length: 7.2, width: 1.35, noseRound: 0.3, cabinBoxy: 0.4, span: 5.3, chord: 1.55, taper: 0.7, struts: true, taildragger: false, finSweep: 0.5, finRound: false, tipUp: 0, wheelRadius: 0.24, cheatline: true, windowsBack: true }),
+  },
+  fighter: {
+    paint: { body: 0xf3f2ee, accent: 0xf26a1b, trim: 0x2b2f36 },
+    build: (m) =>
+      fighter(m, { length: 13.5, width: 1.5, wingSpan: 3.9, rootChord: 3.6, tipChord: 1.0, sweep: 2.8, wingZ: 0.6, twinFins: false, finHeight: 2.8, intakes: "side", canards: false, twinExhaust: true, canopyLength: 2.4, stripe: true }),
+  },
+  airliner: {
+    paint: { body: 0xf5f5f2, accent: 0x214f9e, trim: 0x2b2f36 },
+    build: (m) =>
+      airliner(m, { length: 22, radius: 1.35, span: 8.6, sweep: 2.9, winglet: 0.9, engineRadius: 0.75, windows: 14, cheatline: true, tailStripe: true, finHeight: 3.6, ovalWindows: false }),
+  },
+  biplane: {
+    paint: { body: 0xd6d9dc, accent: 0xc8312b, trim: 0x2b2f36 },
+    build: (m) =>
+      biplane(m, { length: 5.8, width: 1.1, radial: false, span: 4.2, lowerSpan: 4.0, chord: 1.25, gap: 0.9, stagger: 0.35, nStruts: true, wheelRadius: 0.26, checker: false, twoSeat: false, finRound: false }),
+  },
+  glider: {
+    paint: { body: 0xf0e8d8, accent: 0x6b4a2e, trim: 0x2b2f36 },
+    build: (m) =>
+      glider(m, { length: 7.4, radius: 0.4, span: 7.0, chord: 1.0, tipChord: 0.45, dihedral: 0.8, gull: true, tTail: false, winglet: 0, canopyLength: 2.4, wingY: 0.25, tipColour: false, stripe: true }),
+  },
 };
 
 // ---------------------------------------------------------------------------------------------
-// Normalisation: every aircraft is scaled so its largest span or length equals FOOTPRINT
-// metres, then centred on its bounding box. The current box plane has an 8 m wingspan.
+// Normalisation: scale by footprintScale so the scaled aircraft (rotor disc included) has
+// dominant axis PLANE_FOOTPRINT; centre on the airframe bounding box with rotor/propeller
+// discs excluded so a nose prop or tail rotor never drags the visual centre off the fuselage.
 
-const FOOTPRINT = 9;
-const MAX_ROTOR_DIAMETER = 9.6;
-
-export function buildDesign(design: Design): Group {
-  const materials = makeMaterials(design.paint);
-  const inner = design.build(materials);
-  // the rotor disc may exceed the shared footprint slightly; the airframe sets the scale
-  const rotors: Object3D[] = [];
-  inner.traverse((o) => {
-    if (o.userData.rotor) rotors.push(o);
-  });
-  const parents = rotors.map((r) => r.parent!);
-  rotors.forEach((r) => r.removeFromParent());
-  const box = new Box3().setFromObject(inner);
-  rotors.forEach((r, i) => parents[i].add(r));
-  const size = box.getSize(new Vector3());
-  let scale = FOOTPRINT / Math.max(size.x, size.z);
-  if (rotors.length) {
-    const rotorBox = new Box3().setFromObject(rotors[0]);
-    const diameter = rotorBox.getSize(new Vector3()).x;
-    scale = Math.min(scale, MAX_ROTOR_DIAMETER / diameter);
-  }
-  const centre = box.getCenter(new Vector3());
-  inner.position.sub(centre);
-  const outer = new Group();
-  outer.add(inner);
-  outer.scale.setScalar(scale);
-  return outer;
+export interface Aircraft {
+  readonly type: AircraftTypeId;
+  readonly group: Group;
+  /** Pivot Object3Ds in AircraftType.spinners order; main.ts writes rotation[axis]. */
+  readonly spinners: readonly Object3D[];
 }
 
-// ---------------------------------------------------------------------------------------------
-// Scene, views, and the page/capture hook.
+export function buildAircraft(type: AircraftType): Aircraft {
+  const entry = BUILDERS[type.id];
+  const inner = entry.build(makeMaterials(entry.paint));
+  const discs: Object3D[] = [];
+  const named = new Map<string, Object3D>();
+  inner.traverse((o) => {
+    if (o.userData.rotor) discs.push(o);
+    const spinner = o.userData.spinner;
+    if (typeof spinner === "string") named.set(spinner, o);
+  });
+  const parents = discs.map((d) => d.parent as Object3D);
+  for (const d of discs) d.removeFromParent();
+  const box = new Box3().setFromObject(inner);
+  discs.forEach((d, i) => parents[i].add(d));
+  const centre = box.getCenter(new Vector3());
+  inner.position.sub(centre);
+  // Footprint records are nominal (builder arguments, not measured geometry): fins,
+  // exhausts and winglets overhang them by up to ~16%. The residual correction makes the
+  // scaled whole's dominant axis (rotor disc included) exactly PLANE_FOOTPRINT; the outer
+  // group still carries footprintScale.
+  const union = new Box3().setFromObject(inner).getSize(new Vector3());
+  const nominal = Math.max(type.footprint.length, type.footprint.span);
+  inner.scale.setScalar(nominal / Math.max(union.x, union.z));
+  const group = new Group();
+  group.add(inner);
+  group.scale.setScalar(footprintScale(type));
+  const spinners = type.spinners.map((s) => {
+    const pivot = named.get(s.name);
+    if (!pivot) throw new Error(`aircraft ${type.id} is missing spinner pivot "${s.name}"`);
+    return pivot;
+  });
+  return { type: type.id, group, spinners };
+}
 
-const canvas = document.querySelector<HTMLCanvasElement>("#aircraft");
-if (!canvas) throw new Error("Prototype canvas is required");
-const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(1);
-renderer.toneMapping = NoToneMapping;
-const scene = new Scene();
-const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 6000);
-scene.add(camera);
-scene.add(new HemisphereLight(0xdbe9f7, 0x5c6b58, 1.05));
-const sun = new DirectionalLight(0xfff3df, 1.7);
-sun.position.set(-0.55, 0.75, 0.35).multiplyScalar(100);
-scene.add(sun);
-const fill = new DirectionalLight(0xbfd4ee, 0.35);
-fill.position.set(0.6, -0.2, -0.7).multiplyScalar(100);
-scene.add(fill);
-
-// Ground reference for chase views: a wide slab of Nature-like greens under fog.
-const ground = new Mesh(new PlaneGeometry(6000, 6000, 1, 1), new MeshLambertMaterial({ color: 0x5f7d4c }));
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -90;
-scene.add(ground);
-const skyHorizon = new Color(0xdfece9);
-
-let current: Group | null = null;
-let currentId = "";
-
-function disposeGroup(group: Group): void {
-  group.traverse((o) => {
+export function disposeAircraft(a: Aircraft): void {
+  a.group.traverse((o) => {
     if (o instanceof Mesh) {
       o.geometry.dispose();
       const mat = o.material;
@@ -1082,105 +1010,26 @@ function disposeGroup(group: Group): void {
   });
 }
 
-function show(id: string): Design {
-  const design = DESIGNS.find((d) => d.id === id) ?? DESIGNS[5];
-  if (currentId !== design.id) {
-    if (current) {
-      scene.remove(current);
-      disposeGroup(current);
-    }
-    current = buildDesign(design);
-    scene.add(current);
-    currentId = design.id;
-  }
-  return design;
+// ---------------------------------------------------------------------------------------------
+// Aircraft lights (003 contract): one hemisphere light plus one directional sun, created
+// once at boot; applyThemeToLights restages them at each Theme commit/restore, never per
+// frame. Phong under two lights is the cheapest believable shading (research §2).
+
+export interface AircraftLights {
+  readonly hemi: HemisphereLight;
+  readonly sun: DirectionalLight;
 }
 
-const tmpQ = new Quaternion();
-const tmpV = new Vector3();
-const roll = new Quaternion();
-
-export function render(id: string, view: ViewId, width: number, height: number): void {
-  const design = show(id);
-  const aircraft = current!;
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  ground.visible = view !== "card";
-  scene.fog = view === "card" ? null : new Fog(skyHorizon, 300, 2500);
-  camera.up.set(0, 1, 0);
-  aircraft.position.set(0, 0, 0);
-  aircraft.quaternion.identity();
-  aircraft.scale.setScalar(1);
-  if (view === "card") {
-    camera.fov = 30;
-    const radius = new Box3().setFromObject(aircraft).getBoundingSphere(new Sphere()).radius;
-    const distance = (radius / Math.sin((camera.fov * Math.PI) / 360)) * 0.92;
-    camera.position.set(-0.6, 0.34, 0.72).normalize().multiplyScalar(distance);
-    camera.lookAt(0, 0.1, 0.2);
-  } else if (view === "detail") {
-    camera.fov = 45;
-    camera.position.set(-7.5, 4.5, -12);
-    camera.lookAt(0, 0.2, 0.5);
-  } else {
-    // chase views reproduce the current in-app footprint: the 8 m box plane at scale 0.64
-    aircraft.scale.setScalar((8 * 0.64) / FOOTPRINT);
-    camera.fov = 60;
-    const rollAngle = view === "bank" ? -MAX_ROLL : 0;
-    const pitchAngle = view === "bank" ? MAX_PITCH * 0.5 : 0;
-    tmpQ.setFromAxisAngle(tmpV.set(1, 0, 0), -pitchAngle);
-    roll.setFromAxisAngle(tmpV.set(0, 0, 1), rollAngle);
-    aircraft.quaternion.copy(tmpQ).multiply(roll);
-    camera.position.set(0, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z).applyQuaternion(aircraft.quaternion);
-    tmpV.set(0, 0, 1).applyQuaternion(tmpQ).multiplyScalar(CAMERA_LOOK_AHEAD);
-    const viewDir = tmpV.clone().sub(camera.position).normalize();
-    const up = new Vector3(0, 1, 0).applyAxisAngle(viewDir, rollAngle * CAMERA_ROLL_FOLLOW);
-    camera.up.copy(up);
-    camera.lookAt(tmpV);
-  }
-  camera.updateProjectionMatrix();
-  renderer.render(scene, camera);
-  document.documentElement.dataset.ready = `${design.id}:${view}`;
-  document.querySelector("#title")?.replaceChildren(`${design.id} · ${TYPE_LABELS[design.type]} · ${design.name}`);
-  document.querySelector("#description")?.replaceChildren(design.description);
+export function createAircraftLights(): AircraftLights {
+  const hemi = new HemisphereLight(0xdbe9f7, 0x5c6b58, 1.05);
+  const sun = new DirectionalLight(0xfff3df, 1.7);
+  sun.position.set(-55, 75, 35);
+  return { hemi, sun };
 }
 
-const params = new URLSearchParams(location.search);
-const initialId = params.get("variant") ?? "L1";
-const initialView = (params.get("view") as ViewId | null) ?? "card";
-document.body.classList.toggle("capture", params.has("capture"));
-
-function fit(): void {
-  render(currentId || initialId, currentView, innerWidth, innerHeight);
+export function applyThemeToLights(lights: AircraftLights, theme: Theme): void {
+  lights.hemi.color.setHex(theme.sky.zenith);
+  lights.hemi.groundColor.setHex(theme.sky.horizon);
+  lights.sun.color.setHex(theme.sky.sunDisc);
+  lights.sun.position.set(...theme.sky.sunDirection).multiplyScalar(100);
 }
-let currentView: ViewId = initialView;
-window.addEventListener("resize", fit);
-
-// Capture hook: returns a PNG data URL for one design/view at an exact size.
-(globalThis as { __shot?: (id: string, view: ViewId, w: number, h: number) => string }).__shot = (id, view, w, h) => {
-  render(id, view, w, h);
-  return canvas.toDataURL("image/png");
-};
-(globalThis as { __designs?: () => { id: string; type: AircraftTypeId; name: string; description: string }[] }).__designs = () =>
-  DESIGNS.map(({ id, type, name, description }) => ({ id, type, name, description }));
-
-const select = document.querySelector<HTMLSelectElement>("#variant");
-const viewSelect = document.querySelector<HTMLSelectElement>("#view");
-if (select && viewSelect) {
-  for (const d of DESIGNS) {
-    const option = document.createElement("option");
-    option.value = d.id;
-    option.textContent = `${d.id} · ${TYPE_LABELS[d.type]} · ${d.name}`;
-    select.append(option);
-  }
-  select.value = initialId;
-  viewSelect.value = initialView;
-  select.addEventListener("change", () => {
-    currentId = "";
-    render(select.value, currentView, innerWidth, innerHeight);
-  });
-  viewSelect.addEventListener("change", () => {
-    currentView = viewSelect.value as ViewId;
-    fit();
-  });
-}
-render(initialId, initialView, innerWidth, innerHeight);

@@ -17,11 +17,13 @@ import {
   pressFly,
   restoreFailed,
   restoreReady,
+  selectAircraft,
   selectTheme,
   type ChooserState,
   type FlightSnapshot,
 } from "../../src/sim/session";
 import { createPlaneState } from "../../src/sim/flight";
+import type { AircraftTypeId } from "../../src/sim/aircraft";
 import { themeById, type WorldContext } from "../../src/sim/themes";
 import { Vector3 } from "three";
 
@@ -371,6 +373,8 @@ describe("FlightSnapshot helpers (T041/T045)", () => {
       hintHidden: false,
       hintOpacity: 1,
       chunkManifest: [],
+      aircraftType: "light",
+      spinPhase: 0,
     };
   }
 
@@ -407,6 +411,16 @@ describe("FlightSnapshot helpers (T041/T045)", () => {
     snap.plane.position.x = -100;
     expect(live.position.x).toBe(4);
   });
+
+  it("accepts aircraftType and spinPhase (003 T004)", () => {
+    const snap: FlightSnapshot = {
+      ...makeSnapshot(),
+      aircraftType: "biplane",
+      spinPhase: 2.5,
+    };
+    expect(snap.aircraftType).toBe("biplane");
+    expect(snap.spinPhase).toBe(2.5);
+  });
 });
 
 describe("isBusy", () => {
@@ -418,5 +432,130 @@ describe("isBusy", () => {
     expect(isBusy(s)).toBe(false);
     pressFly(s);
     expect(isBusy(s)).toBe(true);
+  });
+});
+
+describe("aircraft selection (003 T004)", () => {
+  function flyingAircraft(
+    s: ChooserState,
+    theme: "nature" | "alien" | "arctic",
+    aircraft: AircraftTypeId,
+  ): ChooserState {
+    readyChooser(s);
+    selectTheme(s, theme);
+    selectAircraft(s, aircraft);
+    const req = pressFly(s);
+    expect(req).not.toBeNull();
+    preparationReady(s, req!.generation);
+    return s;
+  }
+
+  it("createSession defaults to a pending light aircraft with none committed", () => {
+    const s = fresh();
+    expect(s.aircraftSelection).toBe("light");
+    expect(s.activeAircraft).toBeNull();
+  });
+
+  it("selectAircraft only applies in choosing and never touches the theme selection", () => {
+    const s = fresh();
+    expect(selectAircraft(s, "fighter")).toBe(false); // booting
+    bootReady(s);
+    expect(selectAircraft(s, "fighter")).toBe(true);
+    expect(s.aircraftSelection).toBe("fighter");
+    expect(s.selection).toBe("nature");
+    const req = pressFly(s)!;
+    expect(selectAircraft(s, "glider")).toBe(false); // preparing locks
+    preparationReady(s, req.generation);
+    expect(selectAircraft(s, "glider")).toBe(false); // flying
+    openChooser(s);
+    selectAircraft(s, "glider");
+    pressFly(s);
+    expect(pressCancel(s)).toBe("restoring");
+    expect(selectAircraft(s, "biplane")).toBe(false); // restoring locks
+    expect(s.aircraftSelection).toBe("fighter"); // Cancel reset it to active
+  });
+
+  it("selectTheme never changes the aircraft selection", () => {
+    const s = readyChooser(fresh());
+    selectAircraft(s, "airliner");
+    expect(selectTheme(s, "arctic")).toBe(true);
+    expect(s.aircraftSelection).toBe("airliner");
+  });
+
+  it("pressFly carries aircraftType and bumps generation even when both selections equal the active pair", () => {
+    const s = flyingAircraft(fresh(), "nature", "light");
+    openChooser(s); // pending pair now equals the active pair
+    const gen = s.generation;
+    const req = pressFly(s)!;
+    expect(req.themeId).toBe("nature");
+    expect(req.aircraftType).toBe("light");
+    expect(req.generation).toBe(gen + 1); // FR-014: every Fly is a fresh Flight
+    expect(s.phase).toBe("preparing");
+  });
+
+  it("pressFly reads the pending aircraftSelection into the request", () => {
+    const s = readyChooser(fresh());
+    selectAircraft(s, "helicopter");
+    const req = pressFly(s)!;
+    expect(req.aircraftType).toBe("helicopter");
+  });
+
+  it("preparationReady commits the pending selection as the active aircraft", () => {
+    const s = readyChooser(fresh());
+    selectAircraft(s, "airliner");
+    const req = pressFly(s)!;
+    expect(preparationReady(s, req.generation)).toBe(true);
+    expect(s.activeAircraft).toBe("airliner");
+    expect(s.aircraftSelection).toBe("airliner");
+  });
+
+  it("preparationFailed keeps the pending aircraftSelection for retry", () => {
+    const s = readyChooser(fresh());
+    selectAircraft(s, "glider");
+    const req = pressFly(s)!;
+    expect(preparationFailed(s, req.generation, "boom")).toBe(true);
+    expect(s.aircraftSelection).toBe("glider");
+    expect(s.activeAircraft).toBeNull();
+  });
+
+  it("openChooser resets the pending aircraft selection to the active aircraft", () => {
+    const s = flyingAircraft(fresh(), "alien", "biplane");
+    expect(openChooser(s)).toBe(true);
+    expect(s.aircraftSelection).toBe("biplane");
+    expect(s.activeAircraft).toBe("biplane");
+  });
+
+  it("pressCancel to resume resets aircraftSelection to the active aircraft", () => {
+    const s = flyingAircraft(fresh(), "nature", "airliner");
+    openChooser(s);
+    selectAircraft(s, "glider");
+    expect(pressCancel(s)).toBe("resume");
+    expect(s.aircraftSelection).toBe("airliner");
+    expect(restoreReady(s, s.generation)).toBe(true);
+    expect(s.phase).toBe("flying");
+  });
+
+  it("pressCancel to restoring resets aircraftSelection to the active aircraft", () => {
+    const s = flyingAircraft(fresh(), "nature", "light");
+    openChooser(s);
+    selectAircraft(s, "helicopter");
+    pressFly(s); // Fly releases the paused residency
+    expect(pressCancel(s)).toBe("restoring");
+    expect(s.aircraftSelection).toBe("light");
+    expect(restoreReady(s, s.generation)).toBe(true);
+    expect(s.aircraftSelection).toBe("light");
+    expect(s.phase).toBe("flying");
+  });
+
+  it("restoreFailed leaves the chooser showing the active aircraft", () => {
+    const s = flyingAircraft(fresh(), "arctic", "biplane");
+    openChooser(s);
+    selectAircraft(s, "fighter");
+    pressFly(s);
+    pressCancel(s); // -> restoring
+    expect(restoreFailed(s, s.generation, "rebuild blew up")).toBe(true);
+    expect(s.phase).toBe("choosing");
+    expect(s.aircraftSelection).toBe("biplane");
+    expect(s.activeAircraft).toBe("biplane");
   });
 });
