@@ -4,7 +4,7 @@ import {
   PlaneGeometry, Scene, ShaderMaterial, Uniform, Vector3, WebGLRenderer,
 } from "three";
 import { fbm } from "../sim/noise";
-import { buildAircraft } from "./aircraft";
+import { buildAircraft, createAircraftLights } from "./aircraft";
 import { aircraftById } from "../sim/aircraft";
 
 interface Direction {
@@ -100,12 +100,15 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.toneMapping = NoToneMapping;
 const scene = new Scene();
 const camera = new PerspectiveCamera(54, 16 / 9, 1, 24000);
+// buildAircraft already normalises to PLANE_FOOTPRINT (the old 8 m box × 0.64)
 const plane = buildAircraft(aircraftById("light")).group;
 plane.position.set(0, -10, -55);
-plane.scale.setScalar(0.64);
 plane.rotation.z = -0.06;
 camera.add(plane);
 scene.add(camera);
+// Phong aircraft materials need lights; staged per direction in show()
+const aircraftLights = createAircraftLights();
+scene.add(aircraftLights.hemi, aircraftLights.sun);
 
 const skyUniforms = {
   inverse: new Uniform(new Matrix4()),
@@ -300,6 +303,9 @@ function show(): void {
   skyUniforms.sun.value.copy(uniforms.sun.value);
   waterUniforms.nearColor.value.setHex(direction.water[0]);
   waterUniforms.deepColor.value.setHex(direction.water[1]);
+  aircraftLights.hemi.color.setHex(direction.sky[0]);
+  aircraftLights.hemi.groundColor.setHex(direction.sky[1]);
+  aircraftLights.sun.position.copy(uniforms.sun.value).multiplyScalar(100);
   document.querySelector("#title")?.replaceChildren(`${direction.id} / ${direction.name}`);
   document.querySelector("#description")?.replaceChildren(direction.description);
   document.querySelector("#view")?.replaceChildren(overview ? "Flight view" : "Overview");

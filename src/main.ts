@@ -111,6 +111,8 @@ for (const t of AIRCRAFT) {
 const aircraftLights = createAircraftLights();
 scene.add(aircraftLights.hemi, aircraftLights.sun);
 let active: Aircraft = aircraftByType.get("light") as Aircraft;
+// cached with `active` so the frame loop never looks the record up (zero per-frame allocation)
+let activeSpinSpecs = aircraftById(active.type).spinners;
 let plane = active.group;
 active.group.visible = true;
 let spinPhase = 0;
@@ -120,6 +122,7 @@ function switchAircraft(id: AircraftTypeId): void {
   if (next === active) return;
   active.group.visible = false;
   active = next;
+  activeSpinSpecs = aircraftById(active.type).spinners;
   plane = active.group;
   active.group.visible = true;
 }
@@ -935,9 +938,8 @@ function frame(now: number): void {
   }
 
   // Spinner pivots read the shared phase — frozen whenever the fixed-step loop is paused
-  const spinSpecs = aircraftById(active.type).spinners;
   for (let i = 0; i < active.spinners.length; i++) {
-    active.spinners[i].rotation[spinSpecs[i].axis] = spinPhase * spinSpecs[i].rate;
+    active.spinners[i].rotation[activeSpinSpecs[i].axis] = spinPhase * activeSpinSpecs[i].rate;
   }
 
   planePosUniform.set(plane.position.x, plane.position.z);
