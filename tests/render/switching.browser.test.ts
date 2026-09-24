@@ -51,6 +51,12 @@ async function selectAircraft(page: Page, id: AircraftTypeId): Promise<void> {
   await page.click(`#chooser input[name="aircraft"][value="${id}"]`);
 }
 
+// spinPhase wraps at 2π — measure forward progress modulo 2π, never raw ordering
+const TAU = Math.PI * 2;
+function phaseDelta(before: number, after: number): number {
+  return (((after - before) % TAU) + TAU) % TAU;
+}
+
 function checkedRadio(page: Page, name: "theme" | "aircraft"): Promise<string> {
   return page.evaluate(
     (n) =>
@@ -366,8 +372,9 @@ describe("theme switching (US3)", () => {
       );
       const spinAfter = (await aircraft(page)).spinPhase;
       // resumes with one clamped frame slice — never the 2 s interval replayed
-      expect(spinAfter).toBeGreaterThan(spinBefore);
-      expect(spinAfter - spinBefore).toBeLessThan(1);
+      const spinStep = phaseDelta(spinBefore, spinAfter);
+      expect(spinStep).toBeGreaterThan(0);
+      expect(spinStep).toBeLessThan(1);
       // pause → resize → cancel still lands the snapshot; a hidden chooser keeps BOTH
       // pending radios selected (T020)
       await openChooserFromFlight(page);
@@ -474,11 +481,10 @@ describe("aircraft switching (003 US3)", () => {
       expect((await aircraft(page)).type).toBe("biplane");
       // the first live frame continues the frozen phase (at most one clamp window of
       // drift from the resume-side step); paused time is never replayed
-      expect(firstFrameSpin).toBeGreaterThanOrEqual(paused.spinPhase);
-      expect(firstFrameSpin).toBeLessThan(paused.spinPhase + 0.25);
+      expect(phaseDelta(paused.spinPhase, firstFrameSpin)).toBeLessThan(0.25);
       // ...and then keeps advancing with live flight
       await page.waitForTimeout(500);
-      expect((await aircraft(page)).spinPhase).toBeGreaterThan(firstFrameSpin);
+      expect(phaseDelta(firstFrameSpin, (await aircraft(page)).spinPhase)).toBeGreaterThan(0);
       expect(errs.pageErrors).toEqual([]);
     } finally {
       await page.close();

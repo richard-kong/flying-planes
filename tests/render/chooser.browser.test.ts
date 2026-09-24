@@ -299,6 +299,15 @@ describe("aircraft selection (003 T012)", () => {
           expect(s.h).toBeGreaterThanOrEqual(44);
           expect(s.w).toBeGreaterThanOrEqual(44);
         }
+        // the sticky Fly/Cancel bar is on screen with the panel scrolled to the top —
+        // reachable without scrolling, not merely scroll-reachable
+        const bar = await page.evaluate(() => {
+          document.querySelector<HTMLElement>(".chooser-panel")!.scrollTop = 0;
+          const r = document.querySelector(".actions")!.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, vh: innerHeight };
+        });
+        expect(bar.top).toBeGreaterThanOrEqual(0);
+        expect(bar.bottom).toBeLessThanOrEqual(bar.vh);
         // trial clicks run the full actionability pass (scroll-into-view + hit
         // target) without activating anything — the definition of reachable
         for (let i = 0; i < 9; i++) {
