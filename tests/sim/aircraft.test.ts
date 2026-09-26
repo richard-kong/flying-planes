@@ -37,7 +37,7 @@ describe("AIRCRAFT catalogue", () => {
   });
 
   it("normalises every type to the plane footprint on its largest axis", () => {
-    expect(PLANE_FOOTPRINT).toBeCloseTo(8 * 0.64);
+    expect(PLANE_FOOTPRINT).toBeCloseTo(8 * 0.64 * 1.5);
     for (const a of AIRCRAFT) {
       const dominant = Math.max(a.footprint.length, a.footprint.span);
       expect(footprintScale(a) * dominant).toBeCloseTo(PLANE_FOOTPRINT);
