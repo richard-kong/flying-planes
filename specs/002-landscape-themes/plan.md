@@ -154,9 +154,11 @@ Theme gradient and sun values. Keep the existing Alien colour response; colour-s
 is not part of this feature.
 
 `src/render/previews.ts` reuses the Theme sampling/material functions, three representative camera
-poses, and one fixed preview Seed. Render sequentially to one 256×144 RGBA8 target. Restore all
-renderer/camera/uniform state before yielding; readback, row flip, Blob conversion, and image
-decode produce cached object URLs. Dispose temporary geometry/materials/target after readback;
+poses, and one fixed preview Seed. Render pipelined into 256×144 cells of one 768×288 RGBA8
+atlas target: one theme card per frame, all six aircraft in one pass with one readback, and card
+tails (readback, cell cut and row flip, `convertToBlob`, image decode) overlapping. Restore all
+renderer/camera/uniform state synchronously after each render; the tails produce cached object
+URLs. Dispose temporary geometry/materials/target after readback;
 revoke URLs when discarded. Successful cards never regenerate on selection or reopening.
 Failed readback/Blob/decode exposes retry and cannot count as complete startup.
 

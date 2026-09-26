@@ -50,7 +50,8 @@ soft Phong shading. See [research §1](./research.md#1-visual-direction-per-airc
 
 All gates still pass; no exception is requested. The pure `AircraftType` record keeps
 `session.ts` free of Three.js. Lighting is two lights updated at commit, not per frame. Nine
-sequential 256×144 card renders reuse one target; the startup deadline slicer already exists.
+256×144 card renders reuse one atlas target, pipelined with the six aircraft in one pass (002
+preview contract, amended); the startup deadline slicer already exists.
 Removal ledger is explicit in [research §10](./research.md#10-removal-ledger-for-the-implementation-pr).
 
 **Implementation merge gates remain open:** green typecheck/tests/browser tests; measured size,

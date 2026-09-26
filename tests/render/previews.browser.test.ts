@@ -10,6 +10,9 @@ import type { Browser, Page } from "playwright";
 import { launchChromium } from "../../scripts/browser-harness";
 import { BASE, collectPageErrors, gotoAndWaitChooser } from "./browser-helpers";
 
+// in this harness sequential per-card round trips took ~74 frames; pipelined takes ~20
+const PREVIEW_FRAME_BUDGET = 40;
+
 let browser: Browser;
 
 beforeAll(async () => {
@@ -174,6 +177,33 @@ describe("theme previews", () => {
         () => document.getElementById("chooser-error")?.textContent ?? "",
       );
       expect(error.length).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("preview scheduling", () => {
+  it("all nine cards resolve within a bounded number of frames (pipelined, not per-card round trips)", async () => {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errs = collectPageErrors(page);
+    try {
+      await page.addInitScript(() => {
+        const w = window as unknown as { __frames: number };
+        w.__frames = 0;
+        const tick = () => {
+          w.__frames += 1;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      await gotoAndWaitChooser(page, "?seed=42&renderTest");
+      await page.waitForFunction(() => document.body.dataset.readyChooser === "true", undefined, {
+        timeout: 120_000,
+      });
+      const frames = await page.evaluate(() => (window as unknown as { __frames: number }).__frames);
+      expect(frames).toBeLessThan(PREVIEW_FRAME_BUDGET);
+      expect(errs.pageErrors).toEqual([]);
     } finally {
       await page.close();
     }

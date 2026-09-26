@@ -98,21 +98,33 @@ Hint opacity/fade progress follows active simulation time and freezes while the 
 
 ## Preview contract
 
-- Three cards, generated once per page visit, sequentially during startup; successful cards are
-  cached. Use actual shared terrain, surface, sky, and material functions at one fixed Seed.
-- One reusable 256×144 RGBA8 render target: depth on; stencil, MSAA, and mipmaps off.
-- `readRenderTargetPixelsAsync()`, row flip, opaque alpha, 2D canvas, `toBlob()`,
-  `URL.createObjectURL()`. Preserve the existing custom shaders' output without an extra CPU
+- Three cards, generated once per page visit during startup; successful cards are cached. Use
+  actual shared terrain, surface, sky, and material functions at one fixed Seed.
+- Pipelined, not sequential (amended): theme cards render one per frame without awaiting their
+  readbacks, and no card's readback, encode, or decode waits on another card's. Each card still
+  resolves independently to `ready` or `failed`; startup is ready only once every card has.
+- One reusable 768×288 RGBA8 atlas render target of 256×144 cells: depth on; stencil, MSAA, and
+  mipmaps off. Theme cards use cell 0; the six aircraft cards (spec 003) render into their own
+  cells in one pass with one readback of the whole atlas. GL command order guarantees a queued
+  readback sees its card's pixels before a later render reuses the cell.
+- `readRenderTargetPixelsAsync()`, cell cut with row flip, opaque alpha, `OffscreenCanvas`
+  `convertToBlob()` (not `canvas.toBlob()`, which waits on idle time a busy render loop never
+  leaves), `URL.createObjectURL()`. Preserve the existing custom shaders' output without an extra CPU
   colour conversion; `NoToneMapping`. Check on-screen/offscreen parity at the same view.
 - Renderer state is saved and restored in `try/finally`: render target, viewport, scissor and
   scissor test, clear state, output colour space, tone mapping and exposure, and any swapped
   camera or uniform references. Restore state before yielding, and retain the target until
   asynchronous readback completes. Reject stale completions before attaching images.
-- Preview geometry, materials, buffers, and the target are released after the third card. Object
+- Preview geometry, materials, buffers, and the target are released after the last card. Object
   URLs are revoked only when their image is permanently discarded; reopening the chooser reuses the
   cached images. Null Blob, failed decode, and failed readback revoke any unusable URL and show
   a retry. A text-only error fallback remains accessible but is not a successful preview.
 - Selecting a card changes the pending selection only: no regeneration, no live preview, no change
   to the paused world.
+- Chooser fill (amended): behind the first-load chooser (`booting`, or `choosing` before any
+  Flight is committed) the boot world fills `CHOOSER_CHUNKS_PER_FRAME = 6` chunks per frame,
+  nearest first. Flight and Change-theme browsing keep `CHUNKS_PER_FRAME = 2`, so the paused
+  residency still matches its FlightSnapshot manifest. Preparation and restore keep their
+  deadline-sliced jobs.
 - Navigation to the first rendered Nature frame and to the ready chooser with all three decoded
   previews are measured separately; both must finish within two seconds under simulated 4G.

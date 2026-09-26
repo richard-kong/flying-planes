@@ -111,7 +111,16 @@ two-second budget: the 16-ring Euclidean disc holds 797 chunks (25 / 200 / 572 p
 any generation, upload, or shader-compile cost. This is arithmetic from `src/constants.ts`, not a
 measured first-frame failure, but it rules out "fill everything, then show" as a readiness rule.
 
-**Alternatives rejected**: Raising `CHUNKS_PER_FRAME` for startup (long frames, missed 60 fps);
+**Amendment (chooser fill)**: behind the first-load chooser the world is stationary and the
+only motion is the menu itself, so `CHOOSER_CHUNKS_PER_FRAME = 6` applies while booting or
+choosing before any Flight is committed (the `chunkFillBudget` rule in `src/sim/session.ts`).
+Change-theme browsing keeps the flight rate: filling faster there would make the paused
+residency diverge from the FlightSnapshot manifest a Cancel restores. Fill is nearest-first, so the few costly
+LOD0 chunks land in the first frames and the long tail is cheap LOD2. Flight keeps the budget of
+2, so the flight frame budget below is unchanged; the full disc fills ~3× sooner behind the
+chooser.
+
+**Alternatives rejected**: Raising `CHUNKS_PER_FRAME` for flight (long frames, missed 60 fps);
 widening fog to hide holes (weakens the existing visual contract, FR-024); showing a partial world
 (forbidden by FR-019).
 
@@ -133,18 +142,28 @@ reuse the same residency path.
 
 ## 8. Preview cards
 
-**Decision**: Three static cards generated once per page visit, sequentially, from the shared Theme
+**Decision**: Three static cards generated once per page visit, pipelined, from the shared Theme
 terrain/material/sky pipeline at one fixed preview Seed and a representative camera per Theme.
-One reusable 256×144 RGBA8 render target with depth, no stencil, no MSAA, no mipmaps. Read back
-with `readRenderTargetPixelsAsync()`, flip rows, draw into a 2D canvas, `toBlob()` →
-`URL.createObjectURL()`. Preview geometry, materials, buffers, and the target are released before
+One reusable 768×288 RGBA8 atlas target (3×2 cells of 256×144) with depth, no stencil, no MSAA,
+no mipmaps. Read back with `readRenderTargetPixelsAsync()`, cut and flip the card's cell, draw
+into an `OffscreenCanvas`, `convertToBlob()` → `URL.createObjectURL()`. Preview geometry, materials, buffers, and the target are released before
 flight starts; object URLs are revoked when their images are permanently discarded. Render a
 stationary Nature view early, then schedule preview work without advancing it. Decode all three
 images before declaring startup ready. Selecting a card changes only the pending selection.
 
 **Rationale**: FR-023 requires faithful, asset-free previews that stay correct as the Themes are
-tuned. A single small target bounds the extra memory; sequential generation avoids three
-simultaneous worlds. Async readback avoids the synchronous GPU stall of `readRenderTargetPixels`.
+tuned. A single small target bounds the extra memory (≈0.9 MB colour plus depth); each theme
+card's terrain is still built, rendered, and freed within one frame, so pipelining never holds
+two preview worlds. Async readback avoids the synchronous GPU stall of `readRenderTargetPixels`.
+
+**Amendment (pipelining and atlas)**: sequential generation made every card pay a full readback
+fence, PNG encode, and decode round trip before the next began, about 27 frames per card and 232
+frames to a ready chooser at `?seed=42` under SwiftShader. `canvas.toBlob()` was the worst step:
+it runs in browser idle time, which the render loop rarely leaves. Starting every readback
+without awaiting it, sharing one atlas pass and readback across the six aircraft, and encoding
+with `OffscreenCanvas.convertToBlob()` brought the same run to 23 frames (39 s → 2 s wall clock
+on SwiftShader). Rejected: a separate target per card (more memory, no fewer fences); a synchronous
+`readRenderTargetPixels` (stalls the frame on the GPU).
 
 **Colour decision**: Preserve the existing custom terrain/sky shader output in both main and
 preview rendering. Those shaders write `gl_FragColor` without output-conversion chunks; adding

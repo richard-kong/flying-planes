@@ -260,8 +260,8 @@ reopens, injected card failure -> text fallback + startup error + retry path; la
 radio group, >=44 CSS px targets, visible focus, Tab wrap inside the dialog, radio arrows,
 Enter on Fly, Escape = conditional Cancel; menu pointer/wheel/drag events confirmed not to
 reach the flight sim (fresh-input gate + canvas-scoped listeners + flying-phase check).
-Renderer state save/restore around each preview card runs in try/finally before the async
-readback; card geometry is disposed per card and object URLs revoked on discard. Reference
+Renderer state save/restore around each preview render runs in try/finally before the async
+readback (renders pipelined into the shared atlas, amended); card geometry is disposed per card and object URLs revoked on discard. Reference
 - device timing (SC-001 2 s budgets) deferred to T060-T062 owner checks — SwiftShader CPU
 rendering cannot establish them.
 
