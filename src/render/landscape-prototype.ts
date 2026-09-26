@@ -100,7 +100,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.toneMapping = NoToneMapping;
 const scene = new Scene();
 const camera = new PerspectiveCamera(54, 16 / 9, 1, 24000);
-// buildAircraft already normalises to PLANE_FOOTPRINT (the old 8 m box × 0.64)
+// buildAircraft already normalises to PLANE_FOOTPRINT (the old 8 m box × 0.64 × 1.5)
 const plane = buildAircraft(aircraftById("light")).group;
 plane.position.set(0, -10, -55);
 plane.rotation.z = -0.06;

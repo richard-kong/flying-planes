@@ -32,7 +32,7 @@ Invariants:
 | Field | Type | Notes |
 |---|---|---|
 | `type` | `AircraftTypeId` | |
-| `group` | `Group` | Normalised to `PLANE_FOOTPRINT` (5.12 m), centred on the airframe box, forward +Z, up +Y. |
+| `group` | `Group` | Normalised to `PLANE_FOOTPRINT` (7.68 m), centred on the airframe box, forward +Z, up +Y. |
 | `spinners` | `Object3D[]` | Pivot groups matching `AircraftType.spinners` order; rotation is written by `main.ts`. |
 
 `buildAircraft(type: AircraftType, materials): Aircraft` is called six times at boot. `disposeAircraft`

@@ -26,7 +26,7 @@ export interface AircraftType {
 }
 
 /** Screen footprint shared by every Aircraft Type (prior box plane's 8m span, scaled). */
-export const PLANE_FOOTPRINT = 8 * 0.64;
+export const PLANE_FOOTPRINT = 8 * 0.64 * 1.5;
 
 export const AIRCRAFT: readonly AircraftType[] = [
   {
