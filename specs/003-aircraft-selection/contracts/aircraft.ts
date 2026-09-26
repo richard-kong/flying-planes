@@ -30,8 +30,8 @@ export interface AircraftType {
 
 export declare const AIRCRAFT: readonly [AircraftType, AircraftType, AircraftType, AircraftType, AircraftType, AircraftType];
 export declare const DEFAULT_AIRCRAFT: AircraftTypeId; // "light"
-/** shared on-screen footprint (metres): the present 8 m box plane at scale 0.64 */
-export declare const PLANE_FOOTPRINT: number; // 5.12
+/** shared on-screen footprint (metres): the original 8 m box plane at scale 0.64, enlarged 1.5x */
+export declare const PLANE_FOOTPRINT: number; // 7.68
 export declare function aircraftById(id: AircraftTypeId): AircraftType;
 /** scale factor that maps max(length, span) onto PLANE_FOOTPRINT */
 export declare function footprintScale(type: AircraftType): number;

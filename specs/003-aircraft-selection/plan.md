@@ -63,7 +63,7 @@ evidence for all 18 combinations per [quickstart](./quickstart.md).
 
 Six read-only `AircraftType` records ([contract](./contracts/aircraft.ts)): id, card name and
 description, spinner specs (axis + constant rate), natural footprint. `DEFAULT_AIRCRAFT = "light"`,
-`PLANE_FOOTPRINT = 5.12`, `footprintScale()`, `stepSpin()`. Headless tests assert order, default,
+`PLANE_FOOTPRINT = 7.68`, `footprintScale()`, `stepSpin()`. Headless tests assert order, default,
 spinner presence (helicopter/light/biplane only) and the SC-002 footprint tolerance.
 
 ### 2. Session state and snapshot (`src/sim/session.ts`)
