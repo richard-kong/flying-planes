@@ -106,8 +106,9 @@ possible frame hitch); a separate aircraft preparation phase (unneeded complexit
 Decision: extend `previews.ts` with a second card kind. Aircraft cards render the actual built
 `Group` against a fixed neutral sky gradient (Nature sky colours) with the two aircraft lights,
 using the three-quarter camera from the study (bounding-sphere fit, 30° FOV, direction
-(−0.6, 0.34, 0.72)). They share the existing 256×144 render target, sequential scheduling,
-readback → Blob → decoded `<img>`, retry and disposal rules. `PreviewSet.cards` becomes a
+(−0.6, 0.34, 0.72)). They share the existing render target (now a 3×2 atlas of 256×144 cells, rendered in
+one pass with one readback per the amended 002 preview contract), readback → Blob → decoded
+`<img>`, retry and disposal rules. `PreviewSet.cards` becomes a
 discriminated union `ThemeCard | AircraftCard`.
 
 Rationale: reuses the proven readback pipeline; nine cards at 256×144 fit the two-second

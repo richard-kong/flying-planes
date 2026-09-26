@@ -152,11 +152,11 @@ speed.
 | Field | Purpose |
 |---|---|
 | `themeId` | Card key. |
-| `imageUrl` | Object URL from `toBlob()`; revoked when permanently discarded. |
+| `imageUrl` | Object URL from `OffscreenCanvas.convertToBlob()`; revoked when permanently discarded. |
 | `status` | `pending` \| `ready` \| `failed` (failure shows retry feedback; text-only fallback is degraded, not successful startup). |
 
-Generated once per page visit, sequentially, from a single reusable 256×144 RGBA8 target that is
-released before flight starts. Null Blob, image decode, or readback failure is recoverable.
+Generated once per page visit, pipelined, from 256×144 cells of a single reusable 768×288 RGBA8
+atlas target that is released before flight starts. Null Blob, image decode, or readback failure is recoverable.
 Reopening the chooser reuses successful cached images; only a failed card is regenerated on retry.
 
 ## Relationships

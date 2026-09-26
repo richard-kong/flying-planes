@@ -5,6 +5,7 @@ import {
   bootFailed,
   bootReady,
   canCancel,
+  chunkFillBudget,
   copyAutopilot,
   copyCameraPose,
   copyPlaneState,
@@ -26,6 +27,7 @@ import { createPlaneState } from "../../src/sim/flight";
 import type { AircraftTypeId } from "../../src/sim/aircraft";
 import { themeById, type WorldContext } from "../../src/sim/themes";
 import { Vector3 } from "three";
+import { CHOOSER_CHUNKS_PER_FRAME, CHUNKS_PER_FRAME } from "../../src/constants";
 
 function fresh(seed = 42): ChooserState {
   return createSession(seed);
@@ -557,5 +559,23 @@ describe("aircraft selection (003 T004)", () => {
     expect(s.phase).toBe("choosing");
     expect(s.aircraftSelection).toBe("biplane");
     expect(s.activeAircraft).toBe("biplane");
+  });
+});
+
+describe("chunk fill budget", () => {
+  it("streams the boot world faster behind the first-load chooser", () => {
+    expect(CHOOSER_CHUNKS_PER_FRAME).toBeGreaterThan(CHUNKS_PER_FRAME);
+    const s = fresh();
+    expect(chunkFillBudget(s)).toBe(CHOOSER_CHUNKS_PER_FRAME); // booting
+    readyChooser(s);
+    expect(chunkFillBudget(s)).toBe(CHOOSER_CHUNKS_PER_FRAME); // choosing, nothing flown
+  });
+
+  it("keeps the flight rate in flight and while browsing Change theme", () => {
+    const s = flying(fresh());
+    expect(chunkFillBudget(s)).toBe(CHUNKS_PER_FRAME);
+    openChooser(s);
+    expect(s.phase).toBe("choosing");
+    expect(chunkFillBudget(s)).toBe(CHUNKS_PER_FRAME);
   });
 });

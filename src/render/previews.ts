@@ -1,9 +1,10 @@
 // Flight chooser card previews: three theme cards rendered ONCE per page visit through
 // the real terrain/surface/sky/material pipeline at the fixed PREVIEW_SEED (002 T025/T026),
 // then six aircraft cards that borrow the boot-built groups over a themed sky gradient
-// (003 T014). One shared 256x144 RGBA8 target, sequential so a card burst never blocks a
-// frame. Readback is async; every card is a DOM-decoded object URL — failures keep text
-// and offer retry instead of shipping a degraded-but-"successful" startup.
+// (003 T014). One shared 768x288 RGBA8 atlas target of 256x144 cells; renders are pipelined
+// (002 contract: preview cards) so no card waits on another's readback or encode, and the
+// six aircraft share one pass and one readback. Every card is a DOM-decoded object URL —
+// failures keep text and offer retry instead of shipping a degraded-but-"successful" startup.
 import {
   Box3,
   BufferGeometry,
@@ -32,6 +33,10 @@ import { applyThemeToMaterial } from "./terrainMaterial";
 
 export const PREVIEW_W = 256;
 export const PREVIEW_H = 144;
+/** Shared target: a 3x2 grid of cards so the six aircraft render in one pass. */
+export const PREVIEW_ATLAS_COLS = 3;
+export const PREVIEW_ATLAS_W = PREVIEW_W * PREVIEW_ATLAS_COLS;
+export const PREVIEW_ATLAS_H = PREVIEW_H * Math.ceil(AIRCRAFT_ORDER.length / PREVIEW_ATLAS_COLS);
 
 export type PreviewStatus = "pending" | "ready" | "failed";
 
@@ -212,19 +217,40 @@ function restoreRendererState(renderer: WebGLRenderer, saved: SavedRendererState
   renderer.setClearColor(saved.clearColor, saved.clearAlpha);
 }
 
-// Render one theme card: themed uniforms staged on the SHARED material/sky, card scene
-// rendered into the shared target, then the shared readback tail produces the card URL.
-async function renderThemeCard(
-  set: PreviewSet,
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+// Point the shared atlas target at one 256x144 cell (GL origin bottom-left). three.js
+// takes viewport/scissor from the target itself while a render target is bound.
+function bindCell(renderer: WebGLRenderer, target: WebGLRenderTarget, x: number, y: number): void {
+  target.viewport.set(x, y, PREVIEW_W, PREVIEW_H);
+  target.scissor.set(x, y, PREVIEW_W, PREVIEW_H);
+  target.scissorTest = true;
+  renderer.setRenderTarget(target);
+  renderer.toneMapping = NoToneMapping; // the shaders own the colour path
+  renderer.setClearColor(new Color(0), 1);
+  renderer.clear();
+}
+
+function unbindCells(target: WebGLRenderTarget): void {
+  target.viewport.set(0, 0, target.width, target.height);
+  target.scissor.set(0, 0, target.width, target.height);
+  target.scissorTest = false;
+}
+
+// Render one theme card into atlas cell 0: themed uniforms staged on the SHARED
+// material/sky, card scene rendered, geometry freed, renderer + material restored — all
+// synchronously. Returns the in-flight readback; GL command order keeps a later card's
+// render from overwriting pixels this readback has already queued.
+function renderThemeCard(
   card: ThemeCard,
   renderer: WebGLRenderer,
   material: ShaderMaterial,
   target: WebGLRenderTarget,
   restoreMaterial: () => void,
-): Promise<void> {
+): Promise<Uint8Array> {
   const theme = themeById(card.themeId);
-  const gen = set.generation;
-
   const saved = saveRendererState(renderer);
   const savedCamPos = material.uniforms.uCamPos.value;
   const savedPlanePos = (material.uniforms.uPlanePos.value as Vector2).toArray() as [
@@ -237,8 +263,7 @@ async function renderThemeCard(
     const inject = verifyPreviewInject(card);
     if (inject?.kind === "fail") throw new Error(`verify: preview ${card.themeId} failed`);
 
-    const built = buildPreviewScene(card.themeId, material);
-    res = built.res;
+    res = buildPreviewScene(card.themeId, material).res;
     applyThemeToMaterial(material, theme);
     // the card's "camera" feeds the shader's fog/specular eye position during the render
     material.uniforms.uCamPos.value = res.camera.position;
@@ -248,20 +273,15 @@ async function renderThemeCard(
     );
     updateSkyMesh(res.sky, res.camera);
 
-    renderer.setRenderTarget(target);
-    renderer.setViewport(0, 0, PREVIEW_W, PREVIEW_H);
-    renderer.setScissor(0, 0, PREVIEW_W, PREVIEW_H);
-    renderer.setScissorTest(false);
-    renderer.toneMapping = NoToneMapping; // the shaders own the colour path
-    renderer.setClearColor(new Color(0), 1);
-    renderer.clear();
+    bindCell(renderer, target, 0, 0);
     renderer.render(res.scene, res.camera);
-    // the card's geometry lives only until its pixels land on the target
-    disposeCardScene(res);
-    res = null;
+    const pixels = new Uint8Array(PREVIEW_W * PREVIEW_H * 4);
+    return renderer
+      .readRenderTargetPixelsAsync(target, 0, 0, PREVIEW_W, PREVIEW_H, pixels)
+      .then(() => pixels);
   } finally {
-    // restore before yielding — the async readback happens after this
     if (res) disposeCardScene(res);
+    unbindCells(target);
     restoreRendererState(renderer, saved);
     material.uniforms.uCamPos.value = savedCamPos;
     (material.uniforms.uPlanePos.value as Vector2).set(...savedPlanePos);
@@ -269,35 +289,27 @@ async function renderThemeCard(
     // before the next frame, or the background renders in the last card's palette
     restoreMaterial();
   }
-
-  await finishCard(set, card, renderer, target, gen);
 }
 
-// Render one aircraft card: the boot-built group is borrowed for a single render into the
-// shared target — never rebuilt, never left reparented. Framing mirrors the visual study's
-// card view: bounding-sphere fit at fov 30, camera on direction (-0.6, 0.34, 0.72),
-// lookAt (0, 0.1, 0.2), lit by the aircraft lights over a Nature sky gradient.
-async function renderAircraftCard(
+// Atlas cell for an aircraft card: AIRCRAFT_ORDER index laid out left-to-right, bottom-up.
+function aircraftCell(id: AircraftTypeId): [number, number] {
+  const i = AIRCRAFT_ORDER.indexOf(id);
+  return [(i % PREVIEW_ATLAS_COLS) * PREVIEW_W, Math.floor(i / PREVIEW_ATLAS_COLS) * PREVIEW_H];
+}
+
+// Render every given aircraft card into its atlas cell in one pass, then issue ONE
+// readback of the whole atlas. Each boot-built group is borrowed for its cell only —
+// never rebuilt, never left reparented. Framing mirrors the visual study's card view:
+// bounding-sphere fit at fov 30, camera on direction (-0.6, 0.34, 0.72), lookAt
+// (0, 0.1, 0.2), lit by the aircraft lights over a Nature sky gradient. Cards whose
+// render throws are marked failed and left out of `rendered`.
+function renderAircraftAtlas(
   set: PreviewSet,
-  card: AircraftCard,
+  cards: AircraftCard[],
   renderer: WebGLRenderer,
   target: WebGLRenderTarget,
-): Promise<void> {
-  const gen = set.generation;
-  const inject = verifyPreviewInject(card);
-  if (inject?.kind === "fail") throw new Error(`verify: preview ${card.aircraftType} failed`);
-  const aircraft = set.aircraft.get(card.aircraftType);
-  if (!aircraft) throw new Error(`no built aircraft for ${card.aircraftType}`);
-  const group = aircraft.group;
-
+): { rendered: AircraftCard[]; pixels: Promise<Uint8Array> | null } {
   const saved = saveRendererState(renderer);
-  const borrowed = {
-    parent: group.parent,
-    visible: group.visible,
-    position: group.position.clone(),
-    quaternion: group.quaternion.clone(),
-  };
-
   const theme = themeById("nature");
   const cardScene = new Scene();
   const sky = createSkyMesh();
@@ -306,7 +318,55 @@ async function renderAircraftCard(
   applyThemeToLights(lights, theme);
   cardScene.add(sky, lights.hemi, lights.sun);
   const camera = new PerspectiveCamera(30, PREVIEW_W / PREVIEW_H, 0.1, 1000);
+  const rendered: AircraftCard[] = [];
 
+  try {
+    for (const card of cards) {
+      try {
+        renderAircraftCell(set, card, renderer, target, cardScene, sky, camera);
+        rendered.push(card);
+      } catch {
+        failCard(card);
+      }
+    }
+    if (rendered.length === 0) return { rendered, pixels: null };
+    const pixels = new Uint8Array(target.width * target.height * 4);
+    return {
+      rendered,
+      pixels: renderer
+        .readRenderTargetPixelsAsync(target, 0, 0, target.width, target.height, pixels)
+        .then(() => pixels),
+    };
+  } finally {
+    sky.geometry.dispose();
+    (sky.material as ShaderMaterial).dispose();
+    lights.hemi.dispose();
+    lights.sun.dispose();
+    unbindCells(target);
+    restoreRendererState(renderer, saved);
+  }
+}
+
+function renderAircraftCell(
+  set: PreviewSet,
+  card: AircraftCard,
+  renderer: WebGLRenderer,
+  target: WebGLRenderTarget,
+  cardScene: Scene,
+  sky: Mesh,
+  camera: PerspectiveCamera,
+): void {
+  const inject = verifyPreviewInject(card);
+  if (inject?.kind === "fail") throw new Error(`verify: preview ${card.aircraftType} failed`);
+  const aircraft = set.aircraft.get(card.aircraftType);
+  if (!aircraft) throw new Error(`no built aircraft for ${card.aircraftType}`);
+  const group = aircraft.group;
+  const borrowed = {
+    parent: group.parent,
+    visible: group.visible,
+    position: group.position.clone(),
+    quaternion: group.quaternion.clone(),
+  };
   try {
     group.visible = true;
     group.position.set(0, 0, 0);
@@ -319,64 +379,50 @@ async function renderAircraftCard(
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     updateSkyMesh(sky, camera);
-
-    renderer.setRenderTarget(target);
-    renderer.setViewport(0, 0, PREVIEW_W, PREVIEW_H);
-    renderer.setScissor(0, 0, PREVIEW_W, PREVIEW_H);
-    renderer.setScissorTest(false);
-    renderer.toneMapping = NoToneMapping;
-    renderer.setClearColor(new Color(0), 1);
-    renderer.clear();
+    const [x, y] = aircraftCell(card.aircraftType);
+    bindCell(renderer, target, x, y);
     renderer.render(cardScene, camera);
   } finally {
-    // hand the group back before yielding — visible, pose and parent exactly as borrowed
+    // hand the group back — visible, pose and parent exactly as borrowed
     group.visible = borrowed.visible;
     group.position.copy(borrowed.position);
     group.quaternion.copy(borrowed.quaternion);
     if (borrowed.parent) borrowed.parent.add(group);
     else group.removeFromParent();
-    sky.geometry.dispose();
-    (sky.material as ShaderMaterial).dispose();
-    lights.hemi.dispose();
-    lights.sun.dispose();
-    restoreRendererState(renderer, saved);
   }
-
-  await finishCard(set, card, renderer, target, gen);
 }
 
-// Shared card tail for both kinds: async readback -> row flip -> opaque alpha -> PNG blob
-// -> object URL -> DOM decode. A decode failure revokes the URL and marks the card failed
-// via the caller's catch.
-async function finishCard(
+// Shared card tail for both kinds: cut the card's cell out of a readback (row flip, opaque
+// alpha) -> PNG blob -> object URL -> DOM decode. A decode failure revokes the URL and
+// throws so the caller marks the card failed. Tails of different cards run concurrently.
+async function publishCard(
   set: PreviewSet,
   card: PreviewCard,
-  renderer: WebGLRenderer,
-  target: WebGLRenderTarget,
+  pixels: Uint8Array,
+  stride: number,
+  x0: number,
+  y0: number,
   gen: number,
 ): Promise<void> {
-  const pixels = new Uint8Array(PREVIEW_W * PREVIEW_H * 4);
   const inject2 = verifyPreviewInject(card);
   if (inject2?.kind === "delay") await new Promise((r) => setTimeout(r, inject2.ms));
-  await renderer.readRenderTargetPixelsAsync(target, 0, 0, PREVIEW_W, PREVIEW_H, pixels);
   if (set.generation !== gen) return; // stale completion — discard quietly
 
-  // flip rows (GL origin is bottom-left) and force opaque alpha, then blob -> URL -> decode
   const w = PREVIEW_W;
   const h = PREVIEW_H;
   const row = w * 4;
   const flipped = new Uint8ClampedArray(w * h * 4);
   for (let y = 0; y < h; y++) {
-    flipped.set(pixels.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    const src = ((y0 + h - 1 - y) * stride + x0) * 4;
+    flipped.set(pixels.subarray(src, src + row), y * row);
   }
   for (let i = 3; i < flipped.length; i += 4) flipped[i] = 255;
-  const cnv = document.createElement("canvas");
-  cnv.width = w;
-  cnv.height = h;
+  // OffscreenCanvas encodes off the rAF-idle path that canvas.toBlob waits on
+  const cnv = new OffscreenCanvas(w, h);
   const ctx = cnv.getContext("2d");
   if (!ctx) throw new Error("2d canvas unavailable");
   ctx.putImageData(new ImageData(flipped, w, h), 0, 0);
-  const blob = await new Promise<Blob | null>((resolve) => cnv.toBlob(resolve, "image/png"));
+  const blob = await cnv.convertToBlob({ type: "image/png" });
   const inject3 = verifyPreviewInject(card);
   if (inject3?.kind === "nullblob" || !blob) throw new Error("card blob unavailable");
   const url = URL.createObjectURL(blob);
@@ -401,37 +447,74 @@ async function finishCard(
   card.status = "ready";
 }
 
+function failCard(card: PreviewCard): void {
+  card.status = "failed";
+  if (card.url) {
+    URL.revokeObjectURL(card.url);
+    card.url = null;
+  }
+}
+
 /**
- * Render the next pending-or-failed card into the shared target. Sequential by design:
- * the caller awaits each card before starting the next, keeping startup deadline-sliced.
+ * Render every pending card into the shared atlas target, pipelined: theme cards render
+ * one per frame without waiting for their readbacks, the six aircraft share one atlas
+ * pass and one readback, and all card tails (readback -> blob -> decode) overlap.
+ * `onSettled` fires as each card reaches ready or failed; resolves once all have.
  */
-export async function renderNextPreview(
+export async function renderPreviews(
   set: PreviewSet,
   renderer: WebGLRenderer,
   material: ShaderMaterial,
   target: WebGLRenderTarget,
   restoreMaterial: () => void,
-): Promise<boolean> {
-  const card = set.cards.find((c) => c.status === "pending");
-  if (!card) {
+  onSettled: (card: PreviewCard) => void,
+): Promise<void> {
+  const gen = set.generation;
+  const pending = set.cards.filter((c) => c.status === "pending");
+  const tails: Promise<void>[] = [];
+  const settle = (card: PreviewCard): void => {
     set.done = set.cards.every((c) => c.status === "ready");
-    return false;
-  }
-  try {
-    if (card.kind === "theme") {
-      await renderThemeCard(set, card, renderer, material, target, restoreMaterial);
-    } else {
-      await renderAircraftCard(set, card, renderer, target);
+    onSettled(card);
+  };
+  const track = (card: PreviewCard, tail: Promise<void>): void => {
+    tails.push(
+      tail.then(
+        () => settle(card),
+        () => {
+          failCard(card);
+          settle(card);
+        },
+      ),
+    );
+  };
+
+  for (const card of pending) {
+    if (card.kind !== "theme") continue;
+    try {
+      const pixels = renderThemeCard(card, renderer, material, target, restoreMaterial);
+      track(card, pixels.then((px) => publishCard(set, card, px, PREVIEW_W, 0, 0, gen)));
+    } catch {
+      failCard(card);
+      settle(card);
     }
-  } catch (e) {
-    card.status = "failed";
-    if (card.url) {
-      URL.revokeObjectURL(card.url);
-      card.url = null;
+    // one terrain build per frame — never block boot on a card burst
+    await nextFrame();
+  }
+
+  const aircraftCards = pending.filter((c): c is AircraftCard => c.kind === "aircraft");
+  if (aircraftCards.length > 0) {
+    const { rendered, pixels } = renderAircraftAtlas(set, aircraftCards, renderer, target);
+    for (const card of aircraftCards) if (card.status === "failed") settle(card);
+    if (pixels) {
+      for (const card of rendered) {
+        const [x, y] = aircraftCell(card.aircraftType);
+        track(card, pixels.then((px) => publishCard(set, card, px, target.width, x, y, gen)));
+      }
     }
   }
+
+  await Promise.all(tails);
   set.done = set.cards.every((c) => c.status === "ready");
-  return true;
 }
 
 /** Retry only failed cards; ready cards keep their cached URLs untouched. */
@@ -442,12 +525,8 @@ export async function retryFailedPreviews(
   target: WebGLRenderTarget,
   restoreMaterial: () => void,
 ): Promise<void> {
-  for (const card of set.cards) {
-    if (card.status === "failed") {
-      card.status = "pending";
-      await renderNextPreview(set, renderer, material, target, restoreMaterial);
-    }
-  }
+  for (const card of set.cards) if (card.status === "failed") card.status = "pending";
+  await renderPreviews(set, renderer, material, target, restoreMaterial, () => {});
 }
 
 /** Revoke every object URL and mark the set stale — called at teardown and reset only. */
@@ -461,7 +540,7 @@ export function disposePreviewSet(set: PreviewSet): void {
   set.done = false;
 }
 
-/** A card's geometry/scene payload is released after the readback settles. */
+/** A card's geometry/scene payload is released once its render is submitted. */
 export function disposeCardScene(res: PreviewResources): void {
   for (const g of res.geometries) g.dispose();
   res.scene.clear();
