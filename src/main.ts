@@ -7,7 +7,6 @@
 import { Box3, Color, PerspectiveCamera, Scene, Sphere, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, RGBAFormat, UnsignedByteType } from "three";
 import {
   CHUNK_SIZE,
-  CHUNKS_PER_FRAME,
   HINT_TIMEOUT,
   MAX_DPR,
   MAX_SIM_STEPS_PER_FRAME,
@@ -33,6 +32,7 @@ import { initCameraPose, stepCamera, type CameraPose } from "./sim/camera";
 import { themeById, type ThemeId, type WorldContext } from "./sim/themes";
 import {
   bootReady,
+  chunkFillBudget,
   copyAutopilot,
   copyCameraPose,
   copyPlaneState,
@@ -69,11 +69,11 @@ import { createWorldRuntime, type PreparationJob } from "./render/world";
 import {
   createPreviewSet,
   disposePreviewSet,
-  PREVIEW_H,
-  PREVIEW_W,
+  PREVIEW_ATLAS_H,
+  PREVIEW_ATLAS_W,
   previewCardKey,
-  renderNextPreview,
   renderOverviewShot,
+  renderPreviews,
   retryFailedPreviews,
 } from "./render/previews";
 import { createChooser } from "./ui/chooser";
@@ -408,7 +408,7 @@ function launch(themeId: ThemeId, generation: number, kind: "startup" | "launch"
 }
 
 // --- Preview cards (T025-T027) ---
-const previewTarget = new WebGLRenderTarget(PREVIEW_W, PREVIEW_H, {
+const previewTarget = new WebGLRenderTarget(PREVIEW_ATLAS_W, PREVIEW_ATLAS_H, {
   depthBuffer: true,
   stencilBuffer: false,
   samples: 0,
@@ -420,23 +420,14 @@ const previewSet = createPreviewSet(aircraftByType);
 
 let previewsStarted = false;
 async function runPreviews(): Promise<void> {
-  let rendered = 0;
-  for (;;) {
-    const card = previewSet.cards.find((c) => c.status === "pending");
-    if (!card) break;
-    try {
-      await renderNextPreview(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme);
-    } catch {
-      // renderNextPreview marks the card failed itself; keep pumping
-    }
-    rendered += 1;
+  let settled = 0;
+  await renderPreviews(previewSet, renderer, terrainMaterial, previewTarget, restoreLiveTheme, (card) => {
+    settled += 1;
     chooser.setCardImage(previewCardKey(card), card.url, card.status === "failed");
     if (session.phase === "booting") {
-      chooser.setStatus(`Rendering previews… ${rendered}/${previewSet.cards.length}`);
+      chooser.setStatus(`Rendering previews… ${settled}/${previewSet.cards.length}`);
     }
-    // keep the rAF loop alive between cards — never block boot on a card burst
-    await new Promise((r) => requestAnimationFrame(r));
-  }
+  });
   if (previewSet.done) {
     bootReady(session);
     chooser.setStatus("Choose a world, then press Fly.");
@@ -934,7 +925,7 @@ function frame(now: number): void {
 
   if (session.phase !== "preparing" && session.phase !== "restoring") {
     // choosing keeps the paused world resident and streaming around its frozen pose
-    world.update(curr.position.x, curr.position.z, CHUNKS_PER_FRAME);
+    world.update(curr.position.x, curr.position.z, chunkFillBudget(session));
   }
 
   // Spinner pivots read the shared phase — frozen whenever the fixed-step loop is paused

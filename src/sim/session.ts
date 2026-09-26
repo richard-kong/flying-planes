@@ -7,6 +7,7 @@ import type { PlaneState } from "./flight";
 import type { CameraPose } from "./camera";
 import type { AutopilotState } from "./autopilot";
 import type { ChunkKey } from "./chunks";
+import { CHOOSER_CHUNKS_PER_FRAME, CHUNKS_PER_FRAME } from "../constants";
 
 export type ChooserPhase = "booting" | "choosing" | "preparing" | "flying" | "restoring";
 export type SessionErrorKind = "startup" | "launch" | "restore";
@@ -112,6 +113,13 @@ export function createSession(seed: number): ChooserState {
     priorTerrainResident: false,
     error: null,
   };
+}
+
+/** Chunks the world may fill this frame: faster behind the first-load chooser, before any
+ * Flight exists. Change-theme browsing keeps the flight rate so the snapshot stays exact. */
+export function chunkFillBudget(s: ChooserState): number {
+  const firstLoad = s.active === null && (s.phase === "booting" || s.phase === "choosing");
+  return firstLoad ? CHOOSER_CHUNKS_PER_FRAME : CHUNKS_PER_FRAME;
 }
 
 export function isBusy(s: ChooserState): boolean {

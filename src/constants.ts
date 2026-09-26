@@ -12,6 +12,8 @@ export const VIEW_RINGS = 16;
 export const LOD_RINGS: readonly number[] = [2, 7, 16];
 export const LOD_RESOLUTIONS: readonly number[] = [64, 32, 16];
 export const CHUNKS_PER_FRAME = 2;
+/** Fill budget behind the first-load chooser (002 contract: chooser fill). */
+export const CHOOSER_CHUNKS_PER_FRAME = 6;
 export const POOL_PER_LOD: readonly number[] = [32, 240, 680];
 // Water/ice geometry is lazy and only needs to cover the resident view plus replacements.
 // Per-LOD limits match each band's maximum occupancy in the 16-ring view, with headroom for
