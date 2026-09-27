@@ -42,13 +42,15 @@ Every push to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`).
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit` (strict TypeScript) |
 | `npm test` | Vitest unit tests in Node (`tests/sim`, headless `tests/render`) |
-| `npm run test:browser` | Builds an isolated verification bundle and runs the `*.browser.test.ts` suite in Playwright Chromium. Pass filename filters, e.g. `npm run test:browser -- chooser switching` |
+| `npm run test:browser` | Builds an isolated verification bundle and runs the PR-gate `*.browser.test.ts` suites in Playwright Chromium. Pass filename filters, e.g. `npm run test:browser -- chooser switching-theme`. `--soak` runs only the minutes-long `*.soak.browser.test.ts` soaks, `--all` runs both |
 | `npm run size` | Checks the gzipped JS in `dist/` against the 600 KB budget (run `npm run build` first) |
 | `npm run soak:rendered -- --minutes 60 --seed 42 --theme alien --aircraft fighter --headed` | Long rendered soak run that checks for errors, leaks and pool growth |
 | `npm run prototype` | Dev server on `0.0.0.0:5173`, including the landscape studies page at `/landscape-prototype.html` |
 
-CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, `npm run test:browser`, `npm run build`
-and `npm run size` on every PR. Any red check blocks merge.
+CI (`.github/workflows/ci.yml`) runs typecheck, `npm test`, `npm run build` and `npm run size` on
+every PR, plus one runner per gate browser suite so the browser step is bounded by the slowest
+file. The soak suites (`*.soak.browser.test.ts`) run on pushes to `main` and nightly. Any red
+check blocks merge.
 
 ### Project layout
 
