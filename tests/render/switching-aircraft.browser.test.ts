@@ -83,8 +83,13 @@ describe("aircraft switching (003 US3)", () => {
       // the snapshot's sub-step accumulator of drift from the resume-side step); paused
       // time is never replayed
       expect(phaseDelta(paused.spinPhase, firstFrameSpin)).toBeLessThanOrEqual(0.25 + SIM_DT);
-      // ...and then keeps advancing with live flight
-      await page.waitForTimeout(500);
+      // ...and then keeps advancing with live flight — wait on the phase itself, not wall
+      // time, since rAF can stall for seconds under software GL on a loaded runner
+      await page.waitForFunction(
+        (b) => (globalThis as any).__verifyAircraft().spinPhase !== b,
+        firstFrameSpin,
+        { timeout: 30_000 },
+      );
       expect(phaseDelta(firstFrameSpin, (await probeAircraft(page)).spinPhase)).toBeGreaterThan(0);
       expect(errs.pageErrors).toEqual([]);
     } finally {
