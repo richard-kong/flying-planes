@@ -7,6 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Browser, Page } from "playwright";
 import { launchChromium } from "../../scripts/browser-harness";
+import { SIM_DT } from "../../src/constants";
 import type { AircraftTypeId } from "../../src/sim/aircraft";
 import {
   collectPageErrors,
@@ -479,9 +480,10 @@ describe("aircraft switching (003 US3)", () => {
 
       // original aircraft, never the pending card
       expect((await aircraft(page)).type).toBe("biplane");
-      // the first live frame continues the frozen phase (at most one clamp window of
-      // drift from the resume-side step); paused time is never replayed
-      expect(phaseDelta(paused.spinPhase, firstFrameSpin)).toBeLessThan(0.25);
+      // the first live frame continues the frozen phase (at most one clamp window plus
+      // the snapshot's sub-step accumulator of drift from the resume-side step); paused
+      // time is never replayed
+      expect(phaseDelta(paused.spinPhase, firstFrameSpin)).toBeLessThanOrEqual(0.25 + SIM_DT);
       // ...and then keeps advancing with live flight
       await page.waitForTimeout(500);
       expect(phaseDelta(firstFrameSpin, (await aircraft(page)).spinPhase)).toBeGreaterThan(0);
