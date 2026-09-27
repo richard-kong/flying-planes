@@ -37,9 +37,12 @@ try {
   });
   await vitest?.close();
   const state = vitest?.state;
-  const failed = state
-    ? state.getCountOfFailedTests() > 0 || state.getFiles().some((f) => f.result?.errors?.length)
-    : true;
+  const files = state ? state.getFiles() : [];
+  const failed =
+    !state ||
+    files.length === 0 ||
+    state.getCountOfFailedTests() > 0 ||
+    files.some((f) => f.result?.errors?.length);
   code = failed ? 1 : 0;
 } catch (err) {
   console.error(err instanceof Error ? err.message : err);
