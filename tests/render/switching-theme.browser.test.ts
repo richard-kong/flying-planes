@@ -18,6 +18,7 @@ import {
   probeAircraft,
   probeState,
   selectAircraft,
+  waitForFlownDistance,
 } from "./browser-helpers";
 
 let browser: Browser | null = null;
@@ -90,9 +91,7 @@ describe("theme switching (US3)", () => {
       await gotoAndWaitChooser(page, "?seed=42&renderTest=1");
       await flyTheme(page, "nature");
       await page.mouse.move(700, 120);
-      await page.waitForTimeout(2000);
-      const flown = await probeState(page);
-      expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(20); // actually flew somewhere
+      const flown = await waitForFlownDistance(page, 20); // actually flew somewhere
       await openChooserFromFlight(page);
       await flyTheme(page, "nature"); // same theme — still a restart
       const fresh = await probeState(page);

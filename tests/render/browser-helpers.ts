@@ -95,6 +95,20 @@ export async function probeState(page: Page): Promise<FlightProbe> {
   return (await page.evaluate(() => (globalThis as any).__verifyState())) as FlightProbe;
 }
 
+// Wait for the flight to cover ground rather than sleeping wall time: under software GL the
+// sim clamps each slow frame to 0.25 s, so seconds of wall time can be far less sim time.
+export async function waitForFlownDistance(page: Page, min: number): Promise<FlightProbe> {
+  await page.waitForFunction(
+    (m) => {
+      const s = (globalThis as any).__verifyState();
+      return Math.hypot(s.x, s.z) > m;
+    },
+    min,
+    { timeout: 60_000 },
+  );
+  return probeState(page);
+}
+
 // __verifyAircraft (003): the live aircraft's type, scene visibility, master spinner
 // phase in radians, and its projected bbox in screen-space CSS px.
 export interface AircraftProbe {

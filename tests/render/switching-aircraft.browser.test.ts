@@ -15,6 +15,7 @@ import {
   probeAircraft,
   probeState,
   selectAircraft,
+  waitForFlownDistance,
 } from "./browser-helpers";
 
 let browser: Browser | null = null;
@@ -40,7 +41,8 @@ describe("aircraft switching (003 US3)", () => {
       // fly the Biplane — a non-default aircraft, so "the original" is not the boot card
       await selectAircraft(page, "biplane");
       await flyTheme(page, "nature");
-      await page.waitForTimeout(1500); // let the propeller spin up
+      // let the propeller spin up
+      await page.waitForFunction(() => (globalThis as any).__verifyAircraft().spinPhase > 0);
       expect((await probeAircraft(page)).type).toBe("biplane");
       await openChooserFromFlight(page);
 
@@ -104,9 +106,7 @@ describe("aircraft switching (003 US3)", () => {
       await gotoAndWaitChooser(page, "?seed=42&renderTest=1");
       await flyTheme(page, "nature"); // default Light Plane
       await page.mouse.move(700, 120);
-      await page.waitForTimeout(2000);
-      const flown = await probeState(page);
-      expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(20);
+      const flown = await waitForFlownDistance(page, 20);
 
       await openChooserFromFlight(page);
       await selectAircraft(page, "fighter"); // aircraft changes, theme stays Nature
@@ -149,9 +149,7 @@ describe("aircraft switching (003 US3)", () => {
       await gotoAndWaitChooser(page, "?seed=42&renderTest=1");
       await flyTheme(page, "nature");
       await page.mouse.move(700, 120);
-      await page.waitForTimeout(2000);
-      const flown = await probeState(page);
-      expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(20);
+      const flown = await waitForFlownDistance(page, 20);
 
       await openChooserFromFlight(page);
       // touch neither radio — Fly on the unchanged pair is still a fresh Flight
