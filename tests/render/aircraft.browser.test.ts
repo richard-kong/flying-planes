@@ -1,24 +1,21 @@
 // T008 [US1] + T013 [US2]: the __verifyAircraft() probe — the default Light Plane framed
 // inside the viewport, the shared spinner phase advancing in flight and under Autopilot,
-// all eighteen aircraft × Theme pairs committing their selections, and reload resetting
-// the pending pair. Fails until T009–T017 land the hook and the chooser's Aircraft section.
+// and reload resetting the pending pair. The eighteen aircraft × Theme pairs live in
+// aircraft.soak.browser.test.ts (main pushes and the nightly run only).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Browser, Page } from "playwright";
+import type { Browser } from "playwright";
 import { launchChromium } from "../../scripts/browser-harness";
-import { collectPageErrors, flyTheme, gotoAndWaitChooser } from "./browser-helpers";
-import { AIRCRAFT_ORDER, type AircraftTypeId } from "../../src/sim/aircraft";
-import type { ThemeId } from "../../src/sim/themes";
+import {
+  type AircraftProbe,
+  checkedSelections,
+  expectBoxInsideViewport,
+  flyTheme,
+  gotoAndWaitChooser,
+  phaseDelta,
+  probeAircraft,
+} from "./browser-helpers";
 
-const THEME_IDS: readonly ThemeId[] = ["nature", "alien", "arctic"];
 const SEEDED = "?seed=42&renderTest=1";
-const TAU = Math.PI * 2;
-
-interface AircraftProbe {
-  type: AircraftTypeId;
-  visible: boolean;
-  spinPhase: number;
-  box: { left: number; top: number; right: number; bottom: number };
-}
 
 let browser: Browser;
 
@@ -29,48 +26,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
-
-async function probeAircraft(page: Page): Promise<AircraftProbe | null> {
-  return page.evaluate(() => {
-    const hook = (
-      window as unknown as { __verifyAircraft?: () => AircraftProbe }
-    ).__verifyAircraft;
-    return hook?.() ?? null;
-  });
-}
-
-function expectBoxInsideViewport(
-  box: AircraftProbe["box"] | undefined,
-  width: number,
-  height: number,
-): void {
-  expect(box).toBeTruthy();
-  if (!box) return;
-  expect(box.right).toBeGreaterThan(box.left);
-  expect(box.bottom).toBeGreaterThan(box.top);
-  expect(box.left).toBeGreaterThanOrEqual(0);
-  expect(box.top).toBeGreaterThanOrEqual(0);
-  expect(box.right).toBeLessThanOrEqual(width);
-  expect(box.bottom).toBeLessThanOrEqual(height);
-}
-
-// spinPhase wraps at 2π — assert forward progress, not raw ordering
-function phaseDelta(before: number, after: number): number {
-  return (((after - before) % TAU) + TAU) % TAU;
-}
-
-async function checkedSelections(
-  page: Page,
-): Promise<{ theme: string | undefined; aircraft: string | undefined }> {
-  return page.evaluate(() => ({
-    theme: document.querySelector<HTMLInputElement>(
-      '#chooser input[name="theme"]:checked',
-    )?.value,
-    aircraft: document.querySelector<HTMLInputElement>(
-      '#chooser input[name="aircraft"]:checked',
-    )?.value,
-  }));
-}
 
 describe("aircraft selection", () => {
   it("the default flight flies the Light Plane framed inside the viewport", async () => {
@@ -147,40 +102,6 @@ describe("aircraft selection", () => {
       await page.close();
     }
   }, 180_000);
-
-  it("every aircraft × Theme pair flies the committed selections", async () => {
-    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
-    const errs = collectPageErrors(page);
-    try {
-      await gotoAndWaitChooser(page, SEEDED);
-      for (const themeId of THEME_IDS) {
-        for (const aircraftId of AIRCRAFT_ORDER) {
-          const label = `${aircraftId}/${themeId}`;
-          await page.click(
-            `#chooser input[name="aircraft"][value="${aircraftId}"]`,
-          );
-          await flyTheme(page, themeId);
-          const probe = await probeAircraft(page);
-          expect(probe?.type, label).toBe(aircraftId);
-          expect(probe?.visible, label).toBe(true);
-          expectBoxInsideViewport(probe?.box, 960, 600);
-          // the reopened chooser selects the committed pair — the active Theme check
-          await page.click("#change-theme");
-          await page.waitForFunction(
-            () => document.body.dataset.phase === "choosing",
-            undefined,
-    { timeout: 30_000 },
-    );
-          const checked = await checkedSelections(page);
-          expect(checked.theme, label).toBe(themeId);
-          expect(checked.aircraft, label).toBe(aircraftId);
-        }
-      }
-      expect(errs.pageErrors).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  }, 600_000);
 
   it("reload resets the pending choices to Nature and the Light Plane", async () => {
     const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
